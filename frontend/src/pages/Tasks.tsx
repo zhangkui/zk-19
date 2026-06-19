@@ -171,7 +171,7 @@ export default function Tasks() {
                   <tr
                     key={task.id}
                     className="hover:bg-white/5 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/tasks/${task.id}`}
+                    onClick={() => navigate(`/tasks/${task.id}`)}
                   >
                     <td className="px-5 py-4 font-mono text-cyan text-xs">
                       {task.code}

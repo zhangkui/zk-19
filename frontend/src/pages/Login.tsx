@@ -43,8 +43,8 @@ export default function Login() {
       <div
         className="absolute inset-0 opacity-[0.03]"
         style={{
-          backgroundImage: `linear-gradient(#22D3EE 1px, transparent 1px),
-                           linear-gradient(90deg, #22D3EE 1px, transparent 1px)`,
+          backgroundImage:
+            'linear-gradient(#22D3EE 1px, transparent 1px), linear-gradient(90deg, #22D3EE 1px, transparent 1px)',
           backgroundSize: '50px 50px',
         }}
       ></div>

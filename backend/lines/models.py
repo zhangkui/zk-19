@@ -18,8 +18,6 @@ class Line(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
-    objects = models.GeoManager()
-
     class Meta:
         db_table = 'lines_line'
         verbose_name = '输电线路'
@@ -73,8 +71,6 @@ class Tower(models.Model):
     tower_type = models.CharField(max_length=20, choices=TOWER_TYPES, default='straight', verbose_name='杆塔类型')
     sequence = models.IntegerField(default=0, verbose_name='序号')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
-
-    objects = models.GeoManager()
 
     class Meta:
         db_table = 'lines_tower'

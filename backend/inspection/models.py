@@ -50,8 +50,6 @@ class FlightRoute(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
-    objects = models.GeoManager()
-
     class Meta:
         db_table = 'inspection_flightroute'
         verbose_name = '飞行航线'
@@ -112,7 +110,7 @@ class InspectionMedia(models.Model):
 
     task = models.ForeignKey(InspectionTask, on_delete=models.CASCADE, related_name='media', verbose_name='巡检任务')
     tower = models.ForeignKey(Tower, on_delete=models.SET_NULL, null=True, blank=True, related_name='media', verbose_name='杆塔')
-    file = models.FileField(upload_to='inspection/%Y/%m/%d/', verbose_name='文件')
+    file = models.FileField(upload_to='inspection/%Y/%m/%d/', blank=True, verbose_name='文件')
     media_type = models.CharField(max_length=10, choices=MEDIA_TYPES, default='image', verbose_name='类型')
     thumbnail = models.ImageField(upload_to='inspection/thumbs/%Y/%m/%d/', null=True, blank=True, verbose_name='缩略图')
     geom = models.PointField(srid=4326, null=True, blank=True, verbose_name='拍摄位置')
@@ -121,8 +119,6 @@ class InspectionMedia(models.Model):
     has_defect = models.BooleanField(default=False, verbose_name='是否有缺陷')
     defect_count = models.IntegerField(default=0, verbose_name='缺陷数量')
     uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name='上传时间')
-
-    objects = models.GeoManager()
 
     class Meta:
         db_table = 'inspection_media'

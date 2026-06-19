@@ -252,7 +252,7 @@ export default function LineMap() {
           <div className="absolute top-4 right-4 bg-bg-panel/90 backdrop-blur border border-border-dark rounded-lg p-3 text-xs">
             <p className="font-medium mb-2">图例</p>
             <div className="space-y-1.5">
-              {Object.entries(voltageColors).slice(0, 4).map(([label, color) => (
+              {Object.entries(voltageColors).slice(0, 4).map(([label, color]) => (
                 <div key={label} className="flex items-center gap-2">
                   <div className="w-3 h-0.5" style={{ backgroundColor: color }}></div>
                   <span className="text-text-muted">{label}</span>

@@ -182,7 +182,7 @@ export default function TaskDetail() {
             </h3>
           </div>
           <div className="h-80">
-            <MapComponent center={[39.91, 116.47} zoom={12}>
+            <MapComponent center={[39.91, 116.47]} zoom={12}>
               {mediaList.map((media) =>
                 media.coordinates && (
                   <CircleMarker
@@ -254,6 +254,7 @@ export default function TaskDetail() {
                         {media.defect_count}
                       </Badge>
                     </div>
+                    )}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
                       <p className="text-xs text-white truncate">
                         {media.tower_code || '影像'}{' '}

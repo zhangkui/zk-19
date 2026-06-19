@@ -12,7 +12,7 @@ import {
   Clock,
   Mountain,
   Gauge,
-} from 'lucide'
+} from 'lucide-react'
 import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, Tooltip } from 'react-leaflet'
 import dayjs from 'dayjs'
 
