@@ -1,28 +1,47 @@
 import { useState, useEffect } from 'react'
-import { routesApi, linesApi, dronesApi } from '../services/api'
-import type { FlightRoute, Line, Drone } from '../types'
+import { routesApi, linesApi } from '../services/api'
+import type { FlightRoute, Line } from '../types'
 import MapComponent from '../components/MapComponent'
 import Badge from '../components/Badge'
+import Modal, { FormField, inputClass, selectClass, textareaClass } from '../components/Modal'
 import {
   Route,
   Plus,
   Edit,
   Trash2,
-  Play,
-  Clock,
   Mountain,
   Gauge,
 } from 'lucide-react'
-import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, Tooltip } from 'react-leaflet'
+import { Polyline, CircleMarker, Tooltip } from 'react-leaflet'
 import dayjs from 'dayjs'
+
+const ROUTE_STATUS_OPTIONS = [
+  { value: 'draft', label: '草稿' },
+  { value: 'approved', label: '已审批' },
+  { value: 'archived', label: '已归档' },
+]
 
 export default function RouteManagement() {
   const [routes, setRoutes] = useState<FlightRoute[]>([])
   const [lines, setLines] = useState<Line[]>([])
-  const [drones, setDrones] = useState<Drone[]>([])
   const [selectedRoute, setSelectedRoute] = useState<FlightRoute | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingRoute, setEditingRoute] = useState<FlightRoute | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<FlightRoute | null>(null)
+
+  const [form, setForm] = useState({
+    name: '',
+    line: '' as number | string,
+    altitude: 50,
+    speed: 8,
+    estimated_duration: 0,
+    status: 'draft',
+    description: '',
+    waypoints_list: '',
+  })
 
   useEffect(() => {
     loadData()
@@ -30,16 +49,14 @@ export default function RouteManagement() {
 
   const loadData = async () => {
     try {
-      const [routesRes, linesRes, dronesRes] = await Promise.all([
+      const [routesRes, linesRes] = await Promise.all([
         routesApi.list({ page_size: 50 }),
         linesApi.list({ page_size: 50 }),
-        dronesApi.list({ page_size: 50 }),
       ])
       const routesData = routesRes.data.results || routesRes.data
       setRoutes(routesData)
       setLines(linesRes.data.results || linesRes.data)
-      setDrones(dronesRes.data.results || dronesRes.data)
-      if (routesData.length > 0) {
+      if (routesData.length > 0 && !selectedRoute) {
         setSelectedRoute(routesData[0])
       }
     } catch (e) {
@@ -55,6 +72,97 @@ export default function RouteManagement() {
     archived: 'default',
   }
 
+  const openCreate = () => {
+    setEditingRoute(null)
+    setForm({
+      name: '',
+      line: lines.length > 0 ? lines[0].id : '',
+      altitude: 50,
+      speed: 8,
+      estimated_duration: 0,
+      status: 'draft',
+      description: '',
+      waypoints_list: '',
+    })
+    setModalOpen(true)
+  }
+
+  const openEdit = (route: FlightRoute) => {
+    setEditingRoute(route)
+    const coordsText = (route.coordinates || [])
+      .map((c) => `${c[0]},${c[1]}`)
+      .join('\n')
+    setForm({
+      name: route.name,
+      line: route.line,
+      altitude: route.altitude,
+      speed: route.speed,
+      estimated_duration: route.estimated_duration,
+      status: route.status,
+      description: route.description || '',
+      waypoints_list: coordsText,
+    })
+    setModalOpen(true)
+  }
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.line) return
+    setSubmitting(true)
+    try {
+      const waypoints = form.waypoints_list
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [lon, lat] = line.split(',').map((v) => parseFloat(v.trim()))
+          return [lon, lat]
+        })
+        .filter((wp) => !isNaN(wp[0]) && !isNaN(wp[1]))
+
+      const data: any = {
+        name: form.name,
+        line: Number(form.line),
+        altitude: Number(form.altitude),
+        speed: Number(form.speed),
+        estimated_duration: Number(form.estimated_duration),
+        status: form.status,
+        description: form.description,
+      }
+      if (waypoints.length >= 2) {
+        data.waypoints_list = waypoints
+      }
+
+      if (editingRoute) {
+        await routesApi.update(editingRoute.id, data)
+      } else {
+        await routesApi.create(data)
+      }
+      setModalOpen(false)
+      await loadData()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setSubmitting(true)
+    try {
+      await routesApi.delete(deleteTarget.id)
+      if (selectedRoute?.id === deleteTarget.id) {
+        setSelectedRoute(null)
+      }
+      setDeleteTarget(null)
+      await loadData()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -66,7 +174,7 @@ export default function RouteManagement() {
           </p>
         </div>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={openCreate}
           className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -117,7 +225,8 @@ export default function RouteManagement() {
             ))}
             {routes.length === 0 && (
               <div className="p-8 text-center text-text-muted text-sm">
-                暂无航线
+                <Route className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                暂无航线，点击"新建航线"创建
               </div>
             )}
           </div>
@@ -135,7 +244,7 @@ export default function RouteManagement() {
                 center={selectedRoute?.coordinates?.[0] ? [selectedRoute.coordinates[0][1], selectedRoute.coordinates[0][0]] : [39.91, 116.47]}
                 zoom={13}
               >
-                {selectedRoute?.coordinates && (
+                {selectedRoute?.coordinates && selectedRoute.coordinates.length > 0 && (
                   <>
                     <Polyline
                       positions={selectedRoute.coordinates.map((c) => [c[1], c[0]])}
@@ -172,15 +281,19 @@ export default function RouteManagement() {
               <div className="px-5 py-4 border-b border-border-dark flex items-center justify-between">
                 <h3 className="font-semibold">航线详情</h3>
                 <div className="flex items-center gap-2">
-                  <button className="p-2 rounded-lg hover:bg-white/5 text-text-muted hover:text-cyan transition-colors">
+                  <button
+                    onClick={() => openEdit(selectedRoute)}
+                    className="p-2 rounded-lg hover:bg-white/5 text-text-muted hover:text-cyan transition-colors"
+                    title="编辑"
+                  >
                     <Edit className="w-4 h-4" />
                   </button>
-                  <button className="p-2 rounded-lg hover:bg-white/5 text-text-muted hover:text-danger transition-colors">
+                  <button
+                    onClick={() => setDeleteTarget(selectedRoute)}
+                    className="p-2 rounded-lg hover:bg-white/5 text-text-muted hover:text-danger transition-colors"
+                    title="删除"
+                  >
                     <Trash2 className="w-4 h-4" />
-                  </button>
-                  <button className="flex items-center gap-1 px-3 py-1.5 bg-success/20 text-success text-sm rounded-lg hover:bg-success/30 transition-colors">
-                    <Play className="w-4 h-4" />
-                    执行
                   </button>
                 </div>
               </div>
@@ -226,6 +339,145 @@ export default function RouteManagement() {
           )}
         </div>
       </div>
+
+      {/* Create/Edit Modal */}
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editingRoute ? '编辑航线' : '新建航线'}
+        footer={
+          <>
+            <button
+              onClick={() => setModalOpen(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={submitting || !form.name.trim() || !form.line}
+              className="px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm disabled:opacity-50"
+            >
+              {submitting ? '保存中...' : '保存'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <FormField label="航线名称" required>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="请输入航线名称"
+              className={inputClass}
+            />
+          </FormField>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="所属线路" required>
+              <select
+                value={form.line}
+                onChange={(e) => setForm({ ...form, line: Number(e.target.value) })}
+                className={selectClass}
+              >
+                <option value="">请选择线路</option>
+                {lines.map((line) => (
+                  <option key={line.id} value={line.id}>
+                    {line.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="状态">
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className={selectClass}
+              >
+                {ROUTE_STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <FormField label="飞行高度(m)">
+              <input
+                type="number"
+                value={form.altitude}
+                onChange={(e) => setForm({ ...form, altitude: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </FormField>
+            <FormField label="飞行速度(m/s)">
+              <input
+                type="number"
+                step="0.1"
+                value={form.speed}
+                onChange={(e) => setForm({ ...form, speed: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </FormField>
+            <FormField label="预计时长(分钟)">
+              <input
+                type="number"
+                value={form.estimated_duration}
+                onChange={(e) => setForm({ ...form, estimated_duration: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </FormField>
+          </div>
+          <FormField label="航点坐标（经度,纬度 每行一个点，至少2个点）">
+            <textarea
+              value={form.waypoints_list}
+              onChange={(e) => setForm({ ...form, waypoints_list: e.target.value })}
+              placeholder={'116.47,39.91\n116.48,39.92\n116.49,39.93'}
+              rows={5}
+              className={textareaClass}
+            />
+          </FormField>
+          <FormField label="描述">
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="请输入航线描述"
+              rows={2}
+              className={textareaClass}
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      {/* Delete confirm modal */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="确认删除"
+        width="max-w-md"
+        footer={
+          <>
+            <button
+              onClick={() => setDeleteTarget(null)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={submitting}
+              className="px-4 py-2 bg-danger text-white font-medium rounded-lg hover:bg-danger/90 transition-colors text-sm disabled:opacity-50"
+            >
+              {submitting ? '删除中...' : '确认删除'}
+            </button>
+          </>
+        }
+      >
+        <p className="text-text-secondary">
+          确定要删除航线 <span className="text-danger font-medium">{deleteTarget?.name}</span> 吗？此操作不可撤销。
+        </p>
+      </Modal>
     </div>
   )
 }

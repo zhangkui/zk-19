@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { workOrdersApi } from '../services/api'
-import type { WorkOrder } from '../types'
+import { workOrdersApi, towersApi } from '../services/api'
+import type { WorkOrder, Tower } from '../types'
 import Badge from '../components/Badge'
+import Modal, { FormField, inputClass, selectClass, textareaClass } from '../components/Modal'
 import {
   Wrench,
   Plus,
@@ -47,15 +48,37 @@ const statusLabels: Record<string, string> = {
 
 export default function WorkOrders() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
+  const [towers, setTowers] = useState<Tower[]>([])
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [severityFilter, setSeverityFilter] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    tower: '' as number | string,
+    severity: 'minor',
+    priority: 'normal',
+    planned_start: '',
+    planned_end: '',
+  })
   const navigate = useNavigate()
 
   useEffect(() => {
     loadWorkOrders()
+    loadTowers()
   }, [statusFilter, severityFilter])
+
+  const loadTowers = async () => {
+    try {
+      const res = await towersApi.list({ page_size: 200 })
+      setTowers(res.data.results || res.data)
+    } catch (e) {
+      console.error(e)
+    }
+  }
 
   const loadWorkOrders = async () => {
     setLoading(true)
@@ -73,6 +96,42 @@ export default function WorkOrders() {
     }
   }
 
+  const openCreate = () => {
+    setForm({
+      title: '',
+      description: '',
+      tower: towers.length > 0 ? towers[0].id : '',
+      severity: 'minor',
+      priority: 'normal',
+      planned_start: '',
+      planned_end: '',
+    })
+    setModalOpen(true)
+  }
+
+  const handleCreate = async () => {
+    if (!form.title.trim() || !form.description.trim() || !form.tower) return
+    setSubmitting(true)
+    try {
+      const data: any = {
+        title: form.title,
+        description: form.description,
+        tower: Number(form.tower),
+        severity: form.severity,
+        priority: form.priority,
+      }
+      if (form.planned_start) data.planned_start = form.planned_start
+      if (form.planned_end) data.planned_end = form.planned_end
+      await workOrdersApi.create(data)
+      setModalOpen(false)
+      loadWorkOrders()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const statusStats = ['created', 'assigned', 'processing', 'review', 'closed']
 
   return (
@@ -85,7 +144,9 @@ export default function WorkOrders() {
             共 {workOrders.length} 条工单
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
           <Plus className="w-4 h-4" />
           新建工单
         </button>
@@ -241,6 +302,108 @@ export default function WorkOrders() {
           </div>
         )}
       </div>
+
+      {/* Create Work Order Modal */}
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="新建工单"
+        footer={
+          <>
+            <button
+              onClick={() => setModalOpen(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={submitting || !form.title.trim() || !form.description.trim() || !form.tower}
+              className="px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm disabled:opacity-50"
+            >
+              {submitting ? '创建中...' : '创建'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <FormField label="工单标题" required>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="请输入工单标题"
+              className={inputClass}
+            />
+          </FormField>
+          <FormField label="关联杆塔" required>
+            <select
+              value={form.tower}
+              onChange={(e) => setForm({ ...form, tower: Number(e.target.value) })}
+              className={selectClass}
+            >
+              <option value="">请选择杆塔</option>
+              {towers.map((tower) => (
+                <option key={tower.id} value={tower.id}>
+                  {tower.code}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="严重程度">
+              <select
+                value={form.severity}
+                onChange={(e) => setForm({ ...form, severity: e.target.value })}
+                className={selectClass}
+              >
+                <option value="critical">危急</option>
+                <option value="major">重大</option>
+                <option value="minor">一般</option>
+              </select>
+            </FormField>
+            <FormField label="优先级">
+              <select
+                value={form.priority}
+                onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                className={selectClass}
+              >
+                <option value="urgent">紧急</option>
+                <option value="high">高</option>
+                <option value="normal">普通</option>
+                <option value="low">低</option>
+              </select>
+            </FormField>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="计划开始时间">
+              <input
+                type="datetime-local"
+                value={form.planned_start}
+                onChange={(e) => setForm({ ...form, planned_start: e.target.value })}
+                className={inputClass}
+              />
+            </FormField>
+            <FormField label="计划完成时间">
+              <input
+                type="datetime-local"
+                value={form.planned_end}
+                onChange={(e) => setForm({ ...form, planned_end: e.target.value })}
+                className={inputClass}
+              />
+            </FormField>
+          </div>
+          <FormField label="工单描述" required>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="请输入工单描述"
+              rows={3}
+              className={textareaClass}
+            />
+          </FormField>
+        </div>
+      </Modal>
     </div>
   )
 }

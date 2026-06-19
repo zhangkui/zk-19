@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import LineMap from './pages/LineMap'
 import RouteManagement from './pages/RouteManagement'
+import Drones from './pages/Drones'
 import Tasks from './pages/Tasks'
 import TaskDetail from './pages/TaskDetail'
 import Defects from './pages/Defects'
@@ -50,6 +51,7 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="lines" element={<LineMap />} />
         <Route path="routes" element={<RouteManagement />} />
+        <Route path="drones" element={<Drones />} />
         <Route path="tasks" element={<Tasks />} />
         <Route path="tasks/:id" element={<TaskDetail />} />
         <Route path="defects" element={<Defects />} />

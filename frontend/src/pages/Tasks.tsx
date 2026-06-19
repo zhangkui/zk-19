@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { tasksApi, routesApi, dronesApi } from '../services/api'
-import type { InspectionTask, FlightRoute, Drone } from '../types'
+import { tasksApi, routesApi, dronesApi, authApi } from '../services/api'
+import type { InspectionTask, FlightRoute, Drone, User } from '../types'
 import Badge from '../components/Badge'
+import Modal, { FormField, inputClass, selectClass, textareaClass } from '../components/Modal'
 import {
   ClipboardList,
   Plus,
@@ -31,9 +32,20 @@ export default function Tasks() {
   const [tasks, setTasks] = useState<InspectionTask[]>([])
   const [routes, setRoutes] = useState<FlightRoute[]>([])
   const [drones, setDrones] = useState<Drone[]>([])
+  const [pilots, setPilots] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [form, setForm] = useState({
+    name: '',
+    route: '' as number | string,
+    drone: '' as number | string,
+    pilot: '' as number | string,
+    planned_date: '',
+    notes: '',
+  })
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -45,18 +57,54 @@ export default function Tasks() {
       const params: any = { page_size: 50 }
       if (statusFilter) params.status = statusFilter
       if (searchText) params.search = searchText
-      const [tasksRes, routesRes, dronesRes] = await Promise.all([
+      const [tasksRes, routesRes, dronesRes, pilotsRes] = await Promise.all([
         tasksApi.list(params),
         routesApi.list({ page_size: 50 }),
         dronesApi.list({ page_size: 50 }),
+        authApi.getUsers({ role: 'pilot' }),
       ])
       setTasks(tasksRes.data.results || tasksRes.data)
       setRoutes(routesRes.data.results || routesRes.data)
       setDrones(dronesRes.data.results || dronesRes.data)
+      setPilots(pilotsRes.data.results || pilotsRes.data)
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const openCreate = () => {
+    setForm({
+      name: '',
+      route: routes.length > 0 ? routes[0].id : '',
+      drone: drones.length > 0 ? drones[0].id : '',
+      pilot: '',
+      planned_date: dayjs().format('YYYY-MM-DD'),
+      notes: '',
+    })
+    setModalOpen(true)
+  }
+
+  const handleCreate = async () => {
+    if (!form.name.trim()) return
+    setSubmitting(true)
+    try {
+      const data: any = {
+        name: form.name,
+      }
+      if (form.route) data.route = Number(form.route)
+      if (form.drone) data.drone = Number(form.drone)
+      if (form.pilot) data.pilot = Number(form.pilot)
+      if (form.planned_date) data.planned_date = form.planned_date
+      if (form.notes) data.notes = form.notes
+      await tasksApi.create(data)
+      setModalOpen(false)
+      loadData()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -88,7 +136,9 @@ export default function Tasks() {
             共 {tasks.length} 个任务
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
           <Plus className="w-4 h-4" />
           新建任务
         </button>
@@ -236,6 +286,105 @@ export default function Tasks() {
           </div>
         )}
       </div>
+
+      {/* Create Task Modal */}
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="新建巡检任务"
+        footer={
+          <>
+            <button
+              onClick={() => setModalOpen(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={submitting || !form.name.trim()}
+              className="px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm disabled:opacity-50"
+            >
+              {submitting ? '创建中...' : '创建'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <FormField label="任务名称" required>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="请输入任务名称"
+              className={inputClass}
+            />
+          </FormField>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="航线">
+              <select
+                value={form.route}
+                onChange={(e) => setForm({ ...form, route: Number(e.target.value) })}
+                className={selectClass}
+              >
+                <option value="">无</option>
+                {routes.map((route) => (
+                  <option key={route.id} value={route.id}>
+                    {route.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="无人机">
+              <select
+                value={form.drone}
+                onChange={(e) => setForm({ ...form, drone: Number(e.target.value) })}
+                className={selectClass}
+              >
+                <option value="">无</option>
+                {drones.map((drone) => (
+                  <option key={drone.id} value={drone.id}>
+                    {drone.name} ({drone.model})
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="飞手">
+              <select
+                value={form.pilot}
+                onChange={(e) => setForm({ ...form, pilot: Number(e.target.value) })}
+                className={selectClass}
+              >
+                <option value="">请选择</option>
+                {pilots.map((pilot) => (
+                  <option key={pilot.id} value={pilot.id}>
+                    {pilot.name} ({pilot.username})
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="计划日期">
+              <input
+                type="date"
+                value={form.planned_date}
+                onChange={(e) => setForm({ ...form, planned_date: e.target.value })}
+                className={inputClass}
+              />
+            </FormField>
+          </div>
+          <FormField label="备注">
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="请输入任务备注"
+              rows={2}
+              className={textareaClass}
+            />
+          </FormField>
+        </div>
+      </Modal>
     </div>
   )
 }
