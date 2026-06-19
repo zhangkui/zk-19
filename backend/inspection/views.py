@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.filters import SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Count
 from django.utils import timezone
@@ -25,7 +26,7 @@ class DroneViewSet(viewsets.ModelViewSet):
     queryset = Drone.objects.all()
     permission_classes = [IsAuthenticated]
     serializer_class = DroneSerializer
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['status']
     search_fields = ['name', 'model', 'serial_number']
 

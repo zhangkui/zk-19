@@ -91,7 +91,7 @@ class InspectionTaskSerializer(serializers.ModelSerializer):
                   'pilot', 'pilot_name', 'status', 'status_display', 'planned_date',
                   'started_at', 'ended_at', 'media_count', 'defect_count',
                   'notes', 'created_by', 'created_by_name', 'created_at']
-        read_only_fields = ['id', 'media_count', 'defect_count', 'created_by', 'created_at']
+        read_only_fields = ['id', 'code', 'media_count', 'defect_count', 'created_by', 'created_at']
 
     def create(self, validated_data):
         validated_data['created_by'] = self.context['request'].user
