@@ -52,7 +52,7 @@ export default function Drones() {
 
   useEffect(() => {
     loadDrones()
-  }, [statusFilter])
+  }, [statusFilter, searchText])
 
   const loadDrones = async () => {
     setLoading(true)

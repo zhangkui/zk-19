@@ -34,7 +34,7 @@ class DroneViewSet(viewsets.ModelViewSet):
 class FlightRouteViewSet(viewsets.ModelViewSet):
     queryset = FlightRoute.objects.all()
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['line', 'status']
     search_fields = ['name']
 
@@ -47,7 +47,7 @@ class FlightRouteViewSet(viewsets.ModelViewSet):
 class InspectionTaskViewSet(viewsets.ModelViewSet):
     queryset = InspectionTask.objects.all()
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['status', 'route', 'drone', 'pilot']
     search_fields = ['code', 'name']
 
@@ -130,7 +130,7 @@ class InspectionMediaViewSet(viewsets.ReadOnlyModelViewSet):
 class DefectViewSet(viewsets.ModelViewSet):
     queryset = Defect.objects.all()
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['defect_type', 'severity', 'status', 'tower', 'task']
     search_fields = ['description', 'subtype']
 
@@ -168,7 +168,7 @@ class DefectViewSet(viewsets.ModelViewSet):
 class AlertViewSet(viewsets.ModelViewSet):
     queryset = Alert.objects.all()
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['level', 'status', 'category', 'tower']
     search_fields = ['title', 'content']
 

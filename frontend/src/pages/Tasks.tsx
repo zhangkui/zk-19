@@ -50,7 +50,7 @@ export default function Tasks() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [searchText, statusFilter])
 
   const loadData = async () => {
     try {
@@ -152,6 +152,7 @@ export default function Tasks() {
             type="text"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && loadData()}
             placeholder="搜索任务编号、名称..."
             className="w-full pl-10 pr-4 py-2 bg-bg-panel border border-border-dark rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-cyan/50"
           />

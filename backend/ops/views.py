@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.filters import SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 import uuid
@@ -13,7 +14,7 @@ from .serializers import WorkOrderListSerializer, WorkOrderDetailSerializer, Wor
 class WorkOrderViewSet(viewsets.ModelViewSet):
     queryset = WorkOrder.objects.all()
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, SearchFilter]
     filterset_fields = ['status', 'severity', 'priority', 'tower', 'assignee']
     search_fields = ['code', 'title', 'description']
 

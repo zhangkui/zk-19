@@ -57,7 +57,7 @@ export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null)
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserType[]>([])
   const [loading, setLoading] = useState(true)
   const [noteText, setNoteText] = useState('')
   const [selectedAssignee, setSelectedAssignee] = useState<number | ''>('')
@@ -370,7 +370,7 @@ export default function WorkOrderDetail() {
                   {workOrder.assignee_name ? (
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full bg-cyan/20 flex items-center justify-center">
-                        <User className="w-3 h-3 text-cyan" />
+                        <UserIcon className="w-3 h-3 text-cyan" />
                       </div>
                       {workOrder.assignee_name}
                     </div>
