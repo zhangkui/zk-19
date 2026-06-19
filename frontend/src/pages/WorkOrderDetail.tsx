@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { workOrdersApi, authApi } from '../services/api'
-import type { WorkOrder, WorkOrderLog, User } from '../types'
+import type { WorkOrder, WorkOrderLog, User as UserType } from '../types'
 import Badge from '../components/Badge'
 import {
   ArrowLeft,
-  User,
+  User as UserIcon,
   Clock,
   MessageSquare,
   Send,
@@ -154,7 +154,7 @@ export default function WorkOrderDetail() {
               onClick={() => setShowAssignModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors"
             >
-              <User className="w-4 h-4" />
+              <UserIcon className="w-4 h-4" />
               派发工单
             </button>
           )}

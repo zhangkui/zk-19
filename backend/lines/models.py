@@ -22,19 +22,10 @@ class Line(models.Model):
         db_table = 'lines_line'
         verbose_name = '输电线路'
         verbose_name_plural = '输电线路'
+        ordering = ['name']
 
     def __str__(self):
         return self.name
-
-    @property
-    def tower_count(self):
-        return self.towers.count()
-
-    @property
-    def defect_count(self):
-        return self.towers.annotate(
-            defect_cnt=Count('defects')
-        ).values_list('defect_cnt', flat=True)
 
 
 class Section(models.Model):

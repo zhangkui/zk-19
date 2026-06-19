@@ -6,7 +6,7 @@ import MapComponent from '../components/MapComponent'
 import Badge from '../components/Badge'
 import {
   Power,
-  Tower,
+  Zap,
   AlertTriangle,
   Wrench,
   TrendingUp,
@@ -93,7 +93,7 @@ export default function Dashboard() {
         <StatCard
           title="杆塔总数"
           value={stats?.towers || 0}
-          icon={<Tower className="w-6 h-6" />}
+          icon={<Zap className="w-6 h-6" />}
           color="amber"
         />
         <StatCard

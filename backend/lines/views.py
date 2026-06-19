@@ -14,7 +14,10 @@ from .serializers import (
 
 
 class LineViewSet(viewsets.ModelViewSet):
-    queryset = Line.objects.all().annotate(tower_count=Count('towers'))
+    queryset = Line.objects.all().annotate(
+        tower_count=Count('towers', distinct=True),
+        defect_count=Count('towers__defects', distinct=True)
+    )
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['voltage']

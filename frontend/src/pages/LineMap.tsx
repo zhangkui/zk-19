@@ -5,7 +5,7 @@ import MapComponent from '../components/MapComponent'
 import Badge from '../components/Badge'
 import {
   Map,
-  Tower as TowerIcon,
+  Zap as TowerIcon,
   ChevronRight,
   Plus,
   Info,

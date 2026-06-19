@@ -46,21 +46,23 @@ class TowerSerializer(serializers.ModelSerializer):
 class LineListSerializer(serializers.ModelSerializer):
     voltage_display = serializers.CharField(source='get_voltage_display', read_only=True)
     tower_count = serializers.IntegerField(read_only=True)
+    defect_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Line
-        fields = ['id', 'name', 'voltage', 'voltage_display', 'tower_count', 'description', 'created_at']
+        fields = ['id', 'name', 'voltage', 'voltage_display', 'tower_count', 'defect_count', 'description', 'created_at']
 
 
 class LineSerializer(serializers.ModelSerializer):
     voltage_display = serializers.CharField(source='get_voltage_display', read_only=True)
     tower_count = serializers.IntegerField(read_only=True)
+    defect_count = serializers.IntegerField(read_only=True)
     waypoints = serializers.ListField(child=serializers.ListField(child=serializers.FloatField()), write_only=True, required=False)
     coordinates = serializers.SerializerMethodField()
 
     class Meta:
         model = Line
-        fields = ['id', 'name', 'voltage', 'voltage_display', 'geom', 'coordinates', 'tower_count',
+        fields = ['id', 'name', 'voltage', 'voltage_display', 'geom', 'coordinates', 'tower_count', 'defect_count',
                   'description', 'waypoints', 'created_at', 'updated_at']
         extra_kwargs = {
             'geom': {'write_only': True, 'required': False}

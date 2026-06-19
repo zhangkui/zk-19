@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { Zap, Map, Route, ClipboardList, AlertTriangle, Image, Wrench, BarChart3, ChevronLeft, ChevronRight, Bell, User, LogOut, Settings } from 'lucide-react'
 import {
@@ -130,7 +130,7 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
 
         {/* Content */}
         <main className="flex-1 overflow-auto p-6">
-          {children}
+          <Outlet />
         </main>
       </div>
     </div>
