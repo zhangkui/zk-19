@@ -1,0 +1,120 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    container_name: zk19-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zk19}
+      POSTGRES_USER: ${POSTGRES_USER:-zk19}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zk19_pass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zk19}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: zk19-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-zk19}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-zk19_pass}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zk19-api
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+      - media_data:/app/media
+    environment:
+      - DJANGO_SETTINGS_MODULE=zk19.settings
+      - DATABASE_URL=postgis://${POSTGRES_USER:-zk19}:${POSTGRES_PASSWORD:-zk19_pass}@db:5432/${POSTGRES_DB:-zk19}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-zk19}:${RABBITMQ_PASSWORD:-zk19_pass}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=rpc://
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - DEBUG=${DEBUG:-True}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zk19-worker
+    command: celery -A zk19 worker --loglevel=info
+    volumes:
+      - ./backend:/app
+      - media_data:/app/media
+    environment:
+      - DJANGO_SETTINGS_MODULE=zk19.settings
+      - DATABASE_URL=postgis://${POSTGRES_USER:-zk19}:${POSTGRES_PASSWORD:-zk19_pass}@db:5432/${POSTGRES_DB:-zk19}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-zk19}:${RABBITMQ_PASSWORD:-zk19_pass}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=rpc://
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zk19-beat
+    command: celery -A zk19 beat --loglevel=info
+    volumes:
+      - ./backend:/app
+    environment:
+      - DJANGO_SETTINGS_MODULE=zk19.settings
+      - DATABASE_URL=postgis://${POSTGRES_USER:-zk19}:${POSTGRES_PASSWORD:-zk19_pass}@db:5432/${POSTGRES_DB:-zk19}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-zk19}:${RABBITMQ_PASSWORD:-zk19_pass}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=rpc://
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: zk19-frontend
+    command: pnpm dev --host 0.0.0.0 --port 5173
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  rabbitmq_data:
+  media_data:
