@@ -32,17 +32,17 @@ class DroneViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'model', 'serial_number']
 
     def perform_create(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以创建无人机')
         serializer.save()
 
     def perform_update(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以修改无人机')
         serializer.save()
 
     def perform_destroy(self, instance):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以删除无人机')
         instance.delete()
 
@@ -60,17 +60,17 @@ class FlightRouteViewSet(viewsets.ModelViewSet):
         return FlightRouteSerializer
 
     def perform_create(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以创建航线')
         serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以修改航线')
         serializer.save()
 
     def perform_destroy(self, instance):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以删除航线')
         instance.delete()
 
@@ -85,7 +85,7 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        if user.role == 'pilot':
+        if user.role == 'pilot' and not user.is_superadmin:
             qs = qs.filter(pilot=user)
         return qs
 
@@ -96,7 +96,7 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role != 'admin':
+        if user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以创建任务')
         if not serializer.validated_data.get('code'):
             code = f'TASK{timezone.now().strftime("%Y%m%d")}{uuid.uuid4().hex[:6].upper()}'
@@ -106,13 +106,13 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         user = self.request.user
-        if user.role != 'admin':
+        if user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以修改任务')
         serializer.save()
 
     def perform_destroy(self, instance):
         user = self.request.user
-        if user.role != 'admin':
+        if user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以删除任务')
         instance.delete()
 
@@ -120,7 +120,7 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     def upload(self, request, pk=None):
         task = self.get_object()
         user = request.user
-        if user.role == 'pilot' and task.pilot_id != user.id:
+        if user.role == 'pilot' and not user.is_superadmin and task.pilot_id != user.id:
             return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
         files = request.FILES.getlist('files')
         tower_id = request.data.get('tower_id')
@@ -158,7 +158,7 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     def start(self, request, pk=None):
         task = self.get_object()
         user = request.user
-        if user.role == 'pilot' and task.pilot_id != user.id:
+        if user.role == 'pilot' and not user.is_superadmin and task.pilot_id != user.id:
             return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
         if task.status not in ['pending', 'paused']:
             return Response({'error': 'Task cannot be started'}, status=status.HTTP_400_BAD_REQUEST)
@@ -171,7 +171,7 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     def complete(self, request, pk=None):
         task = self.get_object()
         user = request.user
-        if user.role == 'pilot' and task.pilot_id != user.id:
+        if user.role == 'pilot' and not user.is_superadmin and task.pilot_id != user.id:
             return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
         if task.status != 'running':
             return Response({'error': 'Task is not running'}, status=status.HTTP_400_BAD_REQUEST)
@@ -199,6 +199,8 @@ class DefectViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
+        if user.is_superadmin:
+            return qs
         if user.role == 'reviewer':
             pass
         elif user.role == 'pilot':
@@ -216,7 +218,7 @@ class DefectViewSet(viewsets.ModelViewSet):
     def review(self, request, pk=None):
         defect = self.get_object()
         user = request.user
-        if user.role not in ['admin', 'reviewer']:
+        if user.role not in ['admin', 'superadmin', 'reviewer']:
             return Response({'error': '无权执行审核操作'}, status=status.HTTP_403_FORBIDDEN)
         if defect.status != 'pending':
             return Response({'error': 'Defect already reviewed'}, status=status.HTTP_400_BAD_REQUEST)

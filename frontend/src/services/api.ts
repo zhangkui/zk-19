@@ -40,6 +40,11 @@ export const authApi = {
   refresh: (refresh: string) => api.post('/auth/refresh/', { refresh }),
   getMe: () => api.get('/auth/users/me/'),
   getUsers: (params?: any) => api.get('/auth/users/', { params }),
+  getUser: (id: number) => api.get(`/auth/users/${id}/`),
+  createUser: (data: any) => api.post('/auth/users/', data),
+  updateUser: (id: number, data: any) => api.put(`/auth/users/${id}/`, data),
+  deleteUser: (id: number) => api.delete(`/auth/users/${id}/`),
+  getUserOptions: (params?: any) => api.get('/auth/users/options/', { params }),
 }
 
 export const linesApi = {

@@ -16,6 +16,7 @@ import Replay from './pages/Replay'
 import WorkOrders from './pages/WorkOrders'
 import WorkOrderDetail from './pages/WorkOrderDetail'
 import Analytics from './pages/Analytics'
+import Accounts from './pages/Accounts'
 import { canAccessPath, isAdmin } from './utils'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -164,6 +165,14 @@ function App() {
           element={
             <RoleProtectedRoute path="/analytics">
               <Analytics />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="accounts"
+          element={
+            <RoleProtectedRoute path="/accounts">
+              <Accounts />
             </RoleProtectedRoute>
           }
         />

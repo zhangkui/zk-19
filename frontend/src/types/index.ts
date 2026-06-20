@@ -2,10 +2,12 @@ export interface User {
   id: number
   username: string
   name: string
-  role: 'admin' | 'pilot' | 'reviewer' | 'crew'
+  role: 'superadmin' | 'admin' | 'pilot' | 'reviewer' | 'crew'
   role_display: string
   email: string
   phone: string
+  is_active: boolean
+  date_joined: string
 }
 
 export interface Line {

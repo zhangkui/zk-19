@@ -32,17 +32,17 @@ class LineViewSet(viewsets.ModelViewSet):
         return LineSerializer
 
     def perform_create(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以创建线路')
         serializer.save()
 
     def perform_update(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以修改线路')
         serializer.save()
 
     def perform_destroy(self, instance):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以删除线路')
         instance.delete()
 
@@ -55,17 +55,17 @@ class SectionViewSet(viewsets.ModelViewSet):
     filterset_fields = ['line']
 
     def perform_create(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以创建区段')
         serializer.save()
 
     def perform_update(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以修改区段')
         serializer.save()
 
     def perform_destroy(self, instance):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以删除区段')
         instance.delete()
 
@@ -79,17 +79,17 @@ class TowerViewSet(viewsets.ModelViewSet):
     search_fields = ['code']
 
     def perform_create(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以创建杆塔')
         serializer.save()
 
     def perform_update(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以修改杆塔')
         serializer.save()
 
     def perform_destroy(self, instance):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以删除杆塔')
         instance.delete()
 

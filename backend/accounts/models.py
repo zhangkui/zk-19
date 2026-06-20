@@ -3,12 +3,14 @@ from django.db import models
 
 
 class User(AbstractUser):
+    ROLE_SUPERADMIN = 'superadmin'
     ROLE_ADMIN = 'admin'
     ROLE_PILOT = 'pilot'
     ROLE_REVIEWER = 'reviewer'
     ROLE_CREW = 'crew'
 
     ROLE_CHOICES = [
+        (ROLE_SUPERADMIN, '超级管理员'),
         (ROLE_ADMIN, '调度管理员'),
         (ROLE_PILOT, '无人机飞手'),
         (ROLE_REVIEWER, '缺陷审核员'),
@@ -24,3 +26,8 @@ class User(AbstractUser):
 
     def __str__(self):
         return f'{self.username}({self.get_role_display()})'
+
+    @property
+    def is_superadmin(self):
+        return self.role == self.ROLE_SUPERADMIN
+

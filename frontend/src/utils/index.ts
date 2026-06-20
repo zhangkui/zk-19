@@ -2,14 +2,22 @@ import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import type { User } from '../types'
 
-export type Role = 'admin' | 'pilot' | 'reviewer' | 'crew'
+export type Role = 'superadmin' | 'admin' | 'pilot' | 'reviewer' | 'crew'
 
 export const ROLE_LABELS: Record<Role, string> = {
+  superadmin: '超级管理员',
   admin: '调度管理员',
   pilot: '无人机飞手',
   reviewer: '缺陷审核员',
   crew: '检修班组',
 }
+
+export const ROLE_OPTIONS: { value: Role; label: string }[] = [
+  { value: 'admin', label: '调度管理员' },
+  { value: 'pilot', label: '无人机飞手' },
+  { value: 'reviewer', label: '缺陷审核员' },
+  { value: 'crew', label: '检修班组' },
+]
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -17,7 +25,12 @@ export function cn(...inputs: ClassValue[]) {
 
 export function hasRole(user: User | null, ...roles: Role[]): boolean {
   if (!user) return false
+  if (user.role === 'superadmin') return true
   return roles.includes(user.role as Role)
+}
+
+export function isSuperAdmin(user: User | null): boolean {
+  return user?.role === 'superadmin'
 }
 
 export function isAdmin(user: User | null): boolean {
@@ -37,23 +50,25 @@ export function isCrew(user: User | null): boolean {
 }
 
 export const MENU_ROLE_ACCESS: Record<string, Role[]> = {
-  '/': ['admin', 'pilot', 'reviewer', 'crew'],
-  '/lines': ['admin', 'pilot', 'reviewer', 'crew'],
-  '/routes': ['admin'],
-  '/drones': ['admin'],
-  '/tasks': ['admin', 'pilot'],
-  '/defects': ['admin', 'reviewer', 'pilot', 'crew'],
-  '/alerts': ['admin', 'reviewer'],
-  '/replay': ['admin', 'pilot', 'reviewer'],
-  '/workorders': ['admin', 'crew'],
-  '/analytics': ['admin'],
+  '/': ['superadmin', 'admin', 'pilot', 'reviewer', 'crew'],
+  '/lines': ['superadmin', 'admin', 'pilot', 'reviewer', 'crew'],
+  '/routes': ['superadmin', 'admin'],
+  '/drones': ['superadmin', 'admin'],
+  '/tasks': ['superadmin', 'admin', 'pilot'],
+  '/defects': ['superadmin', 'admin', 'reviewer', 'pilot', 'crew'],
+  '/alerts': ['superadmin', 'admin', 'reviewer'],
+  '/replay': ['superadmin', 'admin', 'pilot', 'reviewer'],
+  '/workorders': ['superadmin', 'admin', 'crew'],
+  '/analytics': ['superadmin', 'admin'],
+  '/accounts': ['superadmin'],
 }
 
 export function canAccessPath(user: User | null, path: string): boolean {
   if (!user) return false
+  if (user.role === 'superadmin') return true
   const allowedRoles = MENU_ROLE_ACCESS[path]
-  if (!allowedRoles) return isAdmin(user)
-  return hasRole(user, ...allowedRoles)
+  if (!allowedRoles) return false
+  return allowedRoles.includes(user.role as Role)
 }
 
 export const severityColors: Record<string, string> = {

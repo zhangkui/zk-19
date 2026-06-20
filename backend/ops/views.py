@@ -22,7 +22,7 @@ class WorkOrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        if user.role == 'crew':
+        if user.role == 'crew' and not user.is_superadmin:
             qs = qs.filter(assignee=user)
         return qs
 
@@ -32,7 +32,7 @@ class WorkOrderViewSet(viewsets.ModelViewSet):
         return WorkOrderDetailSerializer
 
     def perform_create(self, serializer):
-        if self.request.user.role != 'admin':
+        if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以创建工单')
         code = f'WO{timezone.now().strftime("%Y%m%d")}{uuid.uuid4().hex[:6].upper()}'
         serializer.save(
@@ -69,7 +69,7 @@ class WorkOrderViewSet(viewsets.ModelViewSet):
         if not action:
             return Response({'error': 'Action required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if user.role == 'crew':
+        if user.role == 'crew' and not user.is_superadmin:
             if work_order.assignee_id != user.id:
                 return Response({'error': '无权操作此工单'}, status=status.HTTP_403_FORBIDDEN)
             if action not in ['start', 'submit_review']:
