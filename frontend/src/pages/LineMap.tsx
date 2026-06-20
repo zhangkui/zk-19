@@ -559,6 +559,14 @@ export default function LineMap() {
     }
   }
 
+  const handleDownloadTemplate = () => {
+    const headers = ['杆塔编号', '经度', '纬度', '杆塔类型', '高度(m)', '序号']
+    const sampleRow = ['N001', '116.4700', '39.9100', 'straight', '45', '1']
+    const bom = '\uFEFF'
+    const csvContent = bom + [headers, sampleRow].map((row) => row.join(',')).join('\n')
+    downloadBlob(new Blob([csvContent], { type: 'text/csv;charset=utf-8-sig' }), '杆塔导入模版.csv')
+  }
+
   const handleSplitSections = async () => {
     if (!selectedLine) return
     const valid = splitSections.filter((s) => s.name.trim() && s.start_km !== '' && s.end_km !== '')
@@ -566,13 +574,62 @@ export default function LineMap() {
       alert('请至少填写一个有效的区段')
       return
     }
+    const parsed = valid.map((s) => ({
+      name: s.name.trim(),
+      start_km: Number(s.start_km),
+      end_km: Number(s.end_km),
+    }))
+    for (const s of parsed) {
+      if (isNaN(s.start_km) || isNaN(s.end_km)) {
+        alert(`区段【${s.name}】公里标格式不正确`)
+        return
+      }
+      if (s.start_km < 0 || s.end_km < 0) {
+        alert(`区段【${s.name}】公里标不能为负数`)
+        return
+      }
+      if (s.start_km >= s.end_km) {
+        alert(`区段【${s.name}】起始公里标必须小于结束公里标`)
+        return
+      }
+    }
+    const nameSet = new Set<string>()
+    for (const s of parsed) {
+      if (nameSet.has(s.name)) {
+        alert(`区段名称重复：${s.name}`)
+        return
+      }
+      nameSet.add(s.name)
+    }
+    const sorted = [...parsed].sort((a, b) => a.start_km - b.start_km)
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (sorted[i].end_km > sorted[i + 1].start_km) {
+        alert(`区段范围重叠：${sorted[i].name}(${sorted[i].start_km}-${sorted[i].end_km}km)与${sorted[i + 1].name}(${sorted[i + 1].start_km}-${sorted[i + 1].end_km}km)`)
+        return
+      }
+    }
+    const existingNames = new Set(sections.map((s) => s.name))
+    for (const s of parsed) {
+      if (existingNames.has(s.name)) {
+        alert(`区段名称已存在：${s.name}`)
+        return
+      }
+    }
+    for (const s of parsed) {
+      for (const ex of sections) {
+        if (!(s.end_km <= ex.start_km || s.start_km >= ex.end_km)) {
+          alert(`新区段${s.name}(${s.start_km}-${s.end_km}km)与已有区段${ex.name}(${ex.start_km}-${ex.end_km}km)范围重叠`)
+          return
+        }
+      }
+    }
     setSubmitting(true)
     try {
       await linesApi.splitSections(selectedLine.id, {
-        sections: valid.map((s) => ({
+        sections: parsed.map((s) => ({
           name: s.name,
-          start_km: Number(s.start_km),
-          end_km: Number(s.end_km),
+          start_km: s.start_km,
+          end_km: s.end_km,
         })),
         auto_assign: true,
       })
@@ -1129,7 +1186,8 @@ export default function LineMap() {
         open={lineModalOpen}
         onClose={closeLineModal}
         title={editingLine ? '编辑线路' : '新增线路'}
-        width="max-w-2xl"
+        width="max-w-lg"
+        nonBlocking
         footer={
           <>
             <button
@@ -1224,7 +1282,8 @@ export default function LineMap() {
         open={towerModalOpen}
         onClose={closeTowerModal}
         title={editingTower ? '编辑杆塔' : '新增杆塔'}
-        width="max-w-2xl"
+        width="max-w-lg"
+        nonBlocking
         footer={
           <>
             <button
@@ -1563,7 +1622,16 @@ export default function LineMap() {
             </div>
           </FormField>
           <div className="bg-bg-card border border-border-dark rounded-lg p-3 text-xs text-text-muted">
-            <p className="font-medium text-text-secondary mb-2">CSV列名要求（任一即可）：</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="font-medium text-text-secondary">CSV列名要求（任一即可）：</p>
+              <button
+                onClick={handleDownloadTemplate}
+                className="flex items-center gap-1 px-2.5 py-1 border border-cyan/40 text-cyan rounded-md hover:bg-cyan/10 transition-colors text-xs font-medium"
+              >
+                <Download className="w-3 h-3" />
+                下载模版
+              </button>
+            </div>
             <ul className="space-y-1 list-disc list-inside">
               <li>杆塔编号 / code / 编号</li>
               <li>经度 / lon / 经度(longitude)</li>

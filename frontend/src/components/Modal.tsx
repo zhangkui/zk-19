@@ -8,24 +8,55 @@ interface ModalProps {
   children: React.ReactNode
   footer?: React.ReactNode
   width?: string
+  nonBlocking?: boolean
 }
 
-export default function Modal({ open, onClose, title, children, footer, width = 'max-w-lg' }: ModalProps) {
+export default function Modal({ open, onClose, title, children, footer, width = 'max-w-lg', nonBlocking = false }: ModalProps) {
   useEffect(() => {
     if (open) {
       const handleEsc = (e: KeyboardEvent) => {
         if (e.key === 'Escape') onClose()
       }
       document.addEventListener('keydown', handleEsc)
-      document.body.style.overflow = 'hidden'
+      if (!nonBlocking) {
+        document.body.style.overflow = 'hidden'
+      }
       return () => {
         document.removeEventListener('keydown', handleEsc)
         document.body.style.overflow = ''
       }
     }
-  }, [open, onClose])
+  }, [open, onClose, nonBlocking])
 
   if (!open) return null
+
+  if (nonBlocking) {
+    return (
+      <div
+        className="fixed inset-0 z-[1000] pointer-events-none flex items-start justify-start p-4 pt-20"
+      >
+        <div
+          className={`bg-bg-panel border border-border-dark rounded-xl shadow-2xl w-full ${width} max-h-[75vh] flex flex-col pointer-events-auto`}
+        >
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border-dark">
+            <h3 className="font-semibold text-lg">{title}</h3>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/5 text-text-muted hover:text-text-primary transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+          {footer && (
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-border-dark">
+              {footer}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

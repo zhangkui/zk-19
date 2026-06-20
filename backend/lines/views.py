@@ -86,15 +86,60 @@ class LineViewSet(viewsets.ModelViewSet):
         auto_assign = request.data.get('auto_assign', True)
         if not sections_data:
             return Response({'error': 'sections参数不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+
+        parsed = []
+        for idx, sec_data in enumerate(sections_data):
+            name = (sec_data.get('name') or '').strip()
+            if not name:
+                return Response({'error': f'第{idx + 1}个区段名称不能为空'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                start_km = float(sec_data.get('start_km', 0))
+                end_km = float(sec_data.get('end_km', 0))
+            except (TypeError, ValueError):
+                return Response({'error': f'第{idx + 1}个区段公里标格式不正确'}, status=status.HTTP_400_BAD_REQUEST)
+            if start_km < 0 or end_km < 0:
+                return Response({'error': f'第{idx + 1}个区段公里标不能为负数'}, status=status.HTTP_400_BAD_REQUEST)
+            if start_km >= end_km:
+                return Response({'error': f'第{idx + 1}个区段起始公里标必须小于结束公里标'}, status=status.HTTP_400_BAD_REQUEST)
+            parsed.append({'name': name, 'start_km': start_km, 'end_km': end_km,
+                           'description': sec_data.get('description', '')})
+
+        seen_names = set()
+        for sec in parsed:
+            if sec['name'] in seen_names:
+                return Response({'error': f'区段名称重复：{sec["name"]}'}, status=status.HTTP_400_BAD_REQUEST)
+            seen_names.add(sec['name'])
+
+        parsed_sorted = sorted(parsed, key=lambda x: x['start_km'])
+        for i in range(len(parsed_sorted) - 1):
+            cur = parsed_sorted[i]
+            nxt = parsed_sorted[i + 1]
+            if cur['end_km'] > nxt['start_km']:
+                return Response(
+                    {'error': f'区段范围重叠：{cur["name"]}({cur["start_km"]}-{cur["end_km"]}km)与{nxt["name"]}({nxt["start_km"]}-{nxt["end_km"]}km)'},
+                    status=status.HTTP_400_BAD_REQUEST)
+
+        existing_sections = line.sections.all()
+        existing_names = {s.name for s in existing_sections}
+        for sec in parsed:
+            if sec['name'] in existing_names:
+                return Response({'error': f'区段名称已存在：{sec["name"]}'}, status=status.HTTP_400_BAD_REQUEST)
+        for sec in parsed:
+            for ex in existing_sections:
+                if not (sec['end_km'] <= ex.start_km or sec['start_km'] >= ex.end_km):
+                    return Response(
+                        {'error': f'新区段{sec["name"]}({sec["start_km"]}-{sec["end_km"]}km)与已有区段{ex.name}({ex.start_km}-{ex.end_km}km)范围重叠'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
         try:
             with transaction.atomic():
                 created_sections = []
-                for sec_data in sections_data:
+                for sec_data in parsed_sorted:
                     section = Section.objects.create(
                         line=line,
-                        name=sec_data.get('name', ''),
-                        start_km=float(sec_data.get('start_km', 0)),
-                        end_km=float(sec_data.get('end_km', 0)),
+                        name=sec_data['name'],
+                        start_km=sec_data['start_km'],
+                        end_km=sec_data['end_km'],
                         description=sec_data.get('description', ''),
                     )
                     created_sections.append(section)
@@ -258,12 +303,12 @@ class TowerViewSet(viewsets.ModelViewSet):
             line = Line.objects.get(id=line_id)
         except Line.DoesNotExist:
             return Response({'error': '线路不存在'}, status=status.HTTP_400_BAD_REQUEST)
+        file_bytes = file.read()
         try:
-            decoded_file = file.read().decode('utf-8-sig')
-            reader = csv.DictReader(io.StringIO(decoded_file))
+            decoded_file = file_bytes.decode('utf-8-sig')
         except Exception:
-            decoded_file = file.read().decode('gbk', errors='ignore')
-            reader = csv.DictReader(io.StringIO(decoded_file))
+            decoded_file = file_bytes.decode('gbk', errors='ignore')
+        reader = csv.DictReader(io.StringIO(decoded_file))
         created = 0
         errors = []
         try:
