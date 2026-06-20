@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { MapContainer, TileLayer, ZoomControl, Polyline, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, ZoomControl, Polyline, CircleMarker, Tooltip, useMap, useMapEvents, Marker } from 'react-leaflet'
 import L, { LatLng, LatLngLiteral } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { GripVertical, Trash2, Plus, X, MapPin, AlertCircle } from 'lucide-react'
@@ -326,7 +326,7 @@ export default function RouteEditor({
   }
 
   const distance = calculateDistance()
-  const simulationPosition = useCallback(() => {
+  const simulationState = useCallback(() => {
     if (!simulationMode || waypoints.length < 2) return null
     const totalSegments = waypoints.length - 1
     const progressPerSegment = 100 / totalSegments
@@ -340,8 +340,45 @@ export default function RouteEditor({
     const end = waypoints[segmentIndex + 1]
     const lat = start.lat + (end.lat - start.lat) * segmentProgress
     const lon = start.lon + (end.lon - start.lon) * segmentProgress
-    return { lat, lon }
+    const bearing = Math.atan2(end.lon - start.lon, end.lat - start.lat) * (180 / Math.PI)
+    return { lat, lon, bearing, segmentIndex, segmentProgress }
   }, [simulationMode, simulationProgress, waypoints])()
+
+  const droneIcon = useMemo(() => {
+    return L.divIcon({
+      className: 'drone-icon',
+      html: `
+        <div style="transform: rotate(${simulationState?.bearing || 0}deg); transition: transform 0.1s;">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <ellipse cx="24" cy="24" rx="8" ry="5" fill="#F59E0B" />
+            <line x1="24" y1="24" x2="8" y2="12" stroke="#374151" stroke-width="2" stroke-linecap="round" />
+            <line x1="24" y1="24" x2="40" y2="12" stroke="#374151" stroke-width="2" stroke-linecap="round" />
+            <line x1="24" y1="24" x2="8" y2="36" stroke="#374151" stroke-width="2" stroke-linecap="round" />
+            <line x1="24" y1="24" x2="40" y2="36" stroke="#374151" stroke-width="2" stroke-linecap="round" />
+            <circle cx="8" cy="12" r="5" fill="#6B7280" stroke="#4B5563" stroke-width="1" />
+            <circle cx="40" cy="12" r="5" fill="#6B7280" stroke="#4B5563" stroke-width="1" />
+            <circle cx="8" cy="36" r="5" fill="#6B7280" stroke="#4B5563" stroke-width="1" />
+            <circle cx="40" cy="36" r="5" fill="#6B7280" stroke="#4B5563" stroke-width="1" />
+            <ellipse cx="8" cy="12" rx="5" ry="1.5" fill="#9CA3AF" opacity="0.6">
+              <animate attributeName="opacity" values="0.6;0.3;0.6" dur="0.2s" repeatCount="indefinite" />
+            </ellipse>
+            <ellipse cx="40" cy="12" rx="5" ry="1.5" fill="#9CA3AF" opacity="0.6">
+              <animate attributeName="opacity" values="0.6;0.3;0.6" dur="0.2s" repeatCount="indefinite" />
+            </ellipse>
+            <ellipse cx="8" cy="36" rx="5" ry="1.5" fill="#9CA3AF" opacity="0.6">
+              <animate attributeName="opacity" values="0.6;0.3;0.6" dur="0.2s" repeatCount="indefinite" />
+            </ellipse>
+            <ellipse cx="40" cy="36" rx="5" ry="1.5" fill="#9CA3AF" opacity="0.6">
+              <animate attributeName="opacity" values="0.6;0.3;0.6" dur="0.2s" repeatCount="indefinite" />
+            </ellipse>
+            <circle cx="24" cy="22" r="2" fill="#22D3EE" />
+          </svg>
+        </div>
+      `,
+      iconSize: [48, 48],
+      iconAnchor: [24, 24],
+    })
+  }, [simulationState?.bearing])
 
   return (
     <div className={cn('relative w-full h-full rounded-lg overflow-hidden', className)}>
@@ -427,23 +464,58 @@ export default function RouteEditor({
             />
           ))}
 
-          {simulationPosition && (
-            <CircleMarker
-              center={[simulationPosition.lat, simulationPosition.lon]}
-              radius={12}
-              fillColor="#F59E0B"
-              color="#F59E0B"
-              weight={3}
-              opacity={1}
-              fillOpacity={1}
-            >
-              <Tooltip direction="top" permanent>
-                <div className="text-xs">
-                  <p className="font-medium text-amber-400">✈️ 无人机</p>
-                  <p>进度: {simulationProgress.toFixed(0)}%</p>
-                </div>
-              </Tooltip>
-            </CircleMarker>
+          {simulationState && (
+            <>
+              <Polyline
+                positions={[
+                  ...positions.slice(0, simulationState.segmentIndex + 1),
+                  [simulationState.lat, simulationState.lon],
+                ]}
+                color="#22D3EE"
+                weight={4}
+                opacity={1}
+              />
+              <Polyline
+                positions={[
+                  ...positions.slice(0, simulationState.segmentIndex + 1),
+                  [simulationState.lat, simulationState.lon],
+                ]}
+                color="#22D3EE"
+                weight={8}
+                opacity={0.3}
+              />
+              <Marker
+                position={[simulationState.lat, simulationState.lon]}
+                icon={droneIcon}
+                zIndexOffset={2000}
+              >
+                <Tooltip direction="top" offset={[0, -20]} permanent>
+                  <div className="text-xs whitespace-nowrap">
+                    <p className="font-medium text-amber-400">🛩️ 无人机</p>
+                    <p className="text-text-muted">进度: {simulationProgress.toFixed(0)}%</p>
+                    <p className="text-text-muted">航段: {simulationState.segmentIndex + 1}/{waypoints.length - 1}</p>
+                  </div>
+                </Tooltip>
+              </Marker>
+              <CircleMarker
+                center={[simulationState.lat, simulationState.lon]}
+                radius={16}
+                fillColor="#F59E0B"
+                color="#F59E0B"
+                weight={0}
+                fillOpacity={0.2}
+              >
+                <CircleMarker
+                  center={[simulationState.lat, simulationState.lon]}
+                  radius={12}
+                  fillColor="transparent"
+                  color="#F59E0B"
+                  weight={2}
+                  fillOpacity={0}
+                  opacity={0.5}
+                />
+              </CircleMarker>
+            </>
           )}
         </MapContainer>
       </div>
@@ -474,22 +546,65 @@ export default function RouteEditor({
 
       {simulationMode && (
         <div className="absolute top-4 left-4 right-4 z-[400]">
-          <div className="bg-amber/90 backdrop-blur text-bg-dark rounded-lg px-4 py-2.5 text-sm">
-            <div className="flex items-center justify-between mb-1">
+          <div className="bg-amber/90 backdrop-blur text-bg-dark rounded-lg px-4 py-3 text-sm">
+            <div className="flex items-center justify-between mb-2">
               <span className="flex items-center gap-2 font-medium">
+                <span className="w-2 h-2 bg-bg-dark rounded-full animate-pulse"></span>
                 🛩️ 模拟飞行中
               </span>
-              <span>{simulationProgress.toFixed(0)}%</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs bg-bg-dark/20 px-2 py-0.5 rounded">
+                  航段 {simulationState ? simulationState.segmentIndex + 1 : 0}/{Math.max(waypoints.length - 1, 0)}
+                </span>
+                <span className="font-mono">{simulationProgress.toFixed(0)}%</span>
+              </div>
             </div>
-            <div className="w-full bg-bg-dark/30 rounded-full h-2">
+            <div className="w-full bg-bg-dark/30 rounded-full h-2 mb-2">
               <div
-                className="bg-bg-dark rounded-full h-2 transition-all duration-200"
+                className="bg-bg-dark rounded-full h-2 transition-all duration-100"
                 style={{ width: `${simulationProgress}%` }}
               />
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                起点
+              </span>
+              <span>
+                总距离: {(distance / 1000).toFixed(2)} km
+              </span>
+              <span className="flex items-center gap-1">
+                终点
+                <span className="w-3 h-3 rounded-full bg-red-500"></span>
+              </span>
             </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .drone-icon {
+          background: transparent !important;
+          border: none !important;
+        }
+        .drone-icon svg {
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+        .leaflet-tooltip-top:before,
+        .leaflet-tooltip-bottom:before,
+        .leaflet-tooltip-left:before,
+        .leaflet-tooltip-right:before {
+          display: none;
+        }
+        .leaflet-tooltip {
+          background: rgba(17, 24, 39, 0.95) !important;
+          border: 1px solid rgba(75, 85, 99, 0.5) !important;
+          color: #e5e7eb !important;
+          border-radius: 6px !important;
+          padding: 8px 10px !important;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+        }
+      `}</style>
 
       {editMode && !readOnly && (
         <div className="absolute bottom-4 left-4 right-4 z-[400]">
