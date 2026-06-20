@@ -216,14 +216,14 @@ export default function LineMap() {
   const openEditTower = (tower: Tower) => {
     setEditingTower(tower)
     setTowerForm({
-      line: tower.line,
-      section: tower.section || '',
+      line: tower.line ?? '',
+      section: tower.section ?? '',
       code: tower.code,
       tower_type: tower.tower_type,
-      height: tower.height || '',
-      sequence: tower.sequence || '',
-      lon: tower.coordinates?.lon || '',
-      lat: tower.coordinates?.lat || '',
+      height: tower.height ?? '',
+      sequence: tower.sequence ?? '',
+      lon: tower.coordinates?.lon ?? '',
+      lat: tower.coordinates?.lat ?? '',
     })
     setTowerModalOpen(true)
   }
@@ -288,10 +288,10 @@ export default function LineMap() {
   const openEditSection = (section: Section) => {
     setEditingSection(section)
     setSectionForm({
-      line: section.line,
+      line: section.line ?? '',
       name: section.name,
-      start_km: section.start_km || '',
-      end_km: section.end_km || '',
+      start_km: section.start_km ?? '',
+      end_km: section.end_km ?? '',
       description: section.description || '',
     })
     setSectionModalOpen(true)

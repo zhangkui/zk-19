@@ -24,7 +24,7 @@ export interface Line {
 
 export interface Section {
   id: number
-  line: number
+  line: number | null
   line_name: string
   name: string
   start_km: number
@@ -36,7 +36,7 @@ export interface Section {
 
 export interface Tower {
   id: number
-  line: number
+  line: number | null
   section: number | null
   code: string
   height: number

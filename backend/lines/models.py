@@ -29,7 +29,7 @@ class Line(models.Model):
 
 
 class Section(models.Model):
-    line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='sections', verbose_name='所属线路')
+    line = models.ForeignKey(Line, on_delete=models.SET_NULL, null=True, blank=True, related_name='sections', verbose_name='所属线路')
     name = models.CharField(max_length=120, verbose_name='区段名称')
     start_km = models.FloatField(default=0, verbose_name='起始公里标')
     end_km = models.FloatField(default=0, verbose_name='结束公里标')
@@ -54,7 +54,7 @@ class Tower(models.Model):
         ('tension', '耐张塔'),
     ]
 
-    line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='towers', verbose_name='所属线路')
+    line = models.ForeignKey(Line, on_delete=models.SET_NULL, null=True, blank=True, related_name='towers', verbose_name='所属线路')
     section = models.ForeignKey(Section, on_delete=models.SET_NULL, null=True, blank=True, related_name='towers', verbose_name='所属区段')
     code = models.CharField(max_length=60, verbose_name='杆塔编号')
     geom = models.PointField(srid=4326, verbose_name='杆塔位置')

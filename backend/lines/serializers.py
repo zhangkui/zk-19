@@ -47,10 +47,17 @@ class LineListSerializer(serializers.ModelSerializer):
     voltage_display = serializers.CharField(source='get_voltage_display', read_only=True)
     tower_count = serializers.IntegerField(read_only=True)
     defect_count = serializers.IntegerField(read_only=True)
+    coordinates = serializers.SerializerMethodField()
 
     class Meta:
         model = Line
-        fields = ['id', 'name', 'voltage', 'voltage_display', 'tower_count', 'defect_count', 'description', 'created_at']
+        fields = ['id', 'name', 'voltage', 'voltage_display', 'tower_count', 'defect_count',
+                  'description', 'coordinates', 'created_at']
+
+    def get_coordinates(self, obj):
+        if obj.geom:
+            return list(obj.geom.coords)
+        return []
 
 
 class LineSerializer(serializers.ModelSerializer):
@@ -96,9 +103,12 @@ class LineDetailSerializer(LineSerializer):
 
 
 class SectionSerializer(serializers.ModelSerializer):
-    line_name = serializers.CharField(source='line.name', read_only=True)
+    line_name = serializers.SerializerMethodField()
     tower_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Section
         fields = ['id', 'line', 'line_name', 'name', 'start_km', 'end_km', 'description', 'tower_count', 'created_at']
+
+    def get_line_name(self, obj):
+        return obj.line.name if obj.line else ''
