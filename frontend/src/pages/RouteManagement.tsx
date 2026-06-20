@@ -79,10 +79,11 @@ export default function RouteManagement() {
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
   const [simulationPlaying, setSimulationPlaying] = useState(false)
   const [simulationProgress, setSimulationProgress] = useState(0)
-  const [simulationSpeed, setSimulationSpeed] = useState(1)
   const [showTowers, setShowTowers] = useState(true)
   const [showSections, setShowSections] = useState(true)
   const [expandedSection, setExpandedSection] = useState<string | null>('info')
+  const [editMapCenter, setEditMapCenter] = useState<[number, number]>([39.91, 116.47])
+  const [editMapZoom, setEditMapZoom] = useState(13)
 
   const [form, setForm] = useState({
     name: '',
@@ -138,16 +139,8 @@ export default function RouteManagement() {
 
   const loadRouteDetail = async (id: number) => {
     try {
-      const [routeRes, tsRes] = await Promise.all([
-        routesApi.get(id),
-        routesApi.getTowersAndSections(id),
-      ])
-      const routeData = {
-        ...routeRes.data,
-        nearby_towers: tsRes.data.towers || [],
-        affected_sections: tsRes.data.sections || [],
-      }
-      setRouteDetail(routeData)
+      const res = await routesApi.get(id)
+      setRouteDetail(res.data)
     } catch (e) {
       console.error(e)
     }
@@ -160,6 +153,8 @@ export default function RouteManagement() {
 
   const openCreate = () => {
     setEditingRoute(null)
+    setEditMapCenter([39.91, 116.47])
+    setEditMapZoom(13)
     setForm({
       name: '',
       line: lines.length > 0 ? lines[0].id : '',
@@ -179,6 +174,16 @@ export default function RouteManagement() {
       lat: coord[1],
       index: idx,
     }))
+    if (route.coordinates && route.coordinates.length > 0) {
+      setEditMapCenter([route.coordinates[0][1], route.coordinates[0][0]])
+    }
+    if (waypoints.length > 10) {
+      setEditMapZoom(12)
+    } else if (waypoints.length > 5) {
+      setEditMapZoom(13)
+    } else {
+      setEditMapZoom(14)
+    }
     setForm({
       name: route.name,
       line: route.line,
@@ -341,26 +346,33 @@ export default function RouteManagement() {
   useEffect(() => {
     let interval: NodeJS.Timeout
     if (simulationPlaying && simulationProgress < 100) {
-      const baseStep = 0.3
-      const step = baseStep * simulationSpeed
       interval = setInterval(() => {
         setSimulationProgress((prev) => {
-          const next = prev + step
+          const next = prev + 0.5
           if (next >= 100) {
             setSimulationPlaying(false)
             return 100
           }
           return next
         })
-      }, 50)
+      }, 100)
     }
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [simulationPlaying, simulationProgress, simulationSpeed])
+  }, [simulationPlaying, simulationProgress])
 
   const towerPoints = useMemo(() => {
-    if (!routeDetail?.nearby_towers) return []
+    if (!routeDetail?.nearby_towers || routeDetail.nearby_towers.length === 0) {
+      if (!routeDetail?.line) return []
+      return towers
+        .filter((t) => t.line === routeDetail.line && t.coordinates)
+        .map((t) => ({
+          lat: t.coordinates!.lat,
+          lon: t.coordinates!.lon,
+          code: t.code,
+        }))
+    }
     return routeDetail.nearby_towers
       .filter((t) => t.coordinates)
       .map((t) => ({
@@ -368,23 +380,47 @@ export default function RouteManagement() {
         lon: t.coordinates!.lon,
         code: t.code,
       }))
-  }, [routeDetail])
+  }, [towers, routeDetail])
 
   const sectionLines = useMemo(() => {
-    if (!routeDetail?.affected_sections) return []
-    return routeDetail.affected_sections.map((s) => {
-      const sectionTowers = routeDetail.nearby_towers?.filter(
-        (t) => t.section === s.id && t.coordinates
-      ) || []
-      const positions = sectionTowers
-        .sort((a, b) => a.sequence - b.sequence)
-        .map((t) => [t.coordinates!.lat, t.coordinates!.lon] as [number, number])
-      return {
-        positions,
-        name: s.name,
-      }
-    }).filter((s) => s.positions.length >= 2)
-  }, [routeDetail])
+    const result: { positions: [number, number][]; name: string }[] = []
+    const sectionTowersMap = new Map<number, { lat: number; lon: number }[]>()
+
+    if (routeDetail?.affected_sections && routeDetail.affected_sections.length > 0) {
+      routeDetail.nearby_towers?.forEach((tower) => {
+        if (tower.coordinates && tower.section) {
+          if (!sectionTowersMap.has(tower.section)) {
+            sectionTowersMap.set(tower.section, [])
+          }
+          sectionTowersMap.get(tower.section)!.push({
+            lat: tower.coordinates.lat,
+            lon: tower.coordinates.lon,
+          })
+        }
+      })
+
+      routeDetail.affected_sections.forEach((section) => {
+        const sectionTowers = sectionTowersMap.get(section.id)
+        if (sectionTowers && sectionTowers.length >= 2) {
+          result.push({
+            positions: sectionTowers.map((t) => [t.lat, t.lon] as [number, number]),
+            name: section.name,
+          })
+        } else {
+          const relatedTowers = towers.filter(
+            (t) => t.section === section.id && t.coordinates
+          )
+          if (relatedTowers.length >= 2) {
+            result.push({
+              positions: relatedTowers.map((t) => [t.coordinates!.lat, t.coordinates!.lon] as [number, number]),
+              name: section.name,
+            })
+          }
+        }
+      })
+    }
+    return result
+  }, [sections, towers, routeDetail])
 
   const editorWaypoints = useMemo(() => {
     if (!routeDetail?.coordinates) return []
@@ -396,13 +432,13 @@ export default function RouteManagement() {
   }, [routeDetail])
 
   const previewWaypoints = useMemo(() => {
-    if (!routeDetail?.coordinates) return []
-    return routeDetail.coordinates.map((coord, idx) => ({
+    if (!selectedRoute?.coordinates) return []
+    return selectedRoute.coordinates.map((coord, idx) => ({
       lon: coord[0],
       lat: coord[1],
       index: idx,
     }))
-  }, [routeDetail])
+  }, [selectedRoute])
 
   const toggleSection = (section: string) => {
     setExpandedSection(expandedSection === section ? null : section)
@@ -750,40 +786,31 @@ export default function RouteManagement() {
                 </div>
               )}
 
-              {canEdit && selectedRoute && (
+              {canEdit && (
                 <div className="bg-bg-panel border border-border-dark rounded-xl overflow-hidden">
                   <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
                     <h3 className="font-semibold">操作</h3>
                     <div className="flex flex-wrap items-center gap-2">
-                      {(selectedRoute.status === 'draft' || selectedRoute.status === 'rejected') && (
+                      {selectedRoute?.status === 'draft' || selectedRoute?.status === 'rejected' ? (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleSubmitReview()
-                          }}
+                          onClick={handleSubmitReview}
                           className="flex items-center gap-2 px-4 py-2 bg-warning text-bg-dark font-medium rounded-lg hover:bg-warning/90 transition-colors text-sm"
                         >
                           <Send className="w-4 h-4" />
                           提交审核
                         </button>
-                      )}
-                      {selectedRoute.status === 'pending_review' && (
+                      ) : null}
+                      {selectedRoute?.status === 'pending_review' && (
                         <>
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openReview('approve')
-                            }}
+                            onClick={() => openReview('approve')}
                             className="flex items-center gap-2 px-4 py-2 bg-success text-bg-dark font-medium rounded-lg hover:bg-success/90 transition-colors text-sm"
                           >
                             <CheckCircle className="w-4 h-4" />
                             审核通过
                           </button>
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openReview('reject')
-                            }}
+                            onClick={() => openReview('reject')}
                             className="flex items-center gap-2 px-4 py-2 bg-danger text-white font-medium rounded-lg hover:bg-danger/90 transition-colors text-sm"
                           >
                             <XCircle className="w-4 h-4" />
@@ -792,32 +819,21 @@ export default function RouteManagement() {
                         </>
                       )}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openHistory()
-                        }}
+                        onClick={openHistory}
                         className="flex items-center gap-2 px-4 py-2 bg-bg-card border border-border-dark rounded-lg hover:bg-white/5 transition-colors text-sm"
                       >
                         <History className="w-4 h-4" />
                         版本记录
                       </button>
-                      {selectedRoute.status !== 'pending_review' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openEdit(selectedRoute)
-                          }}
-                          className="flex items-center gap-2 px-4 py-2 bg-bg-card border border-border-dark rounded-lg hover:bg-white/5 transition-colors text-sm"
-                        >
-                          <Edit className="w-4 h-4" />
-                          编辑
-                        </button>
-                      )}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteTarget(selectedRoute)
-                        }}
+                        onClick={() => openEdit(selectedRoute!)}
+                        className="flex items-center gap-2 px-4 py-2 bg-bg-card border border-border-dark rounded-lg hover:bg-white/5 transition-colors text-sm"
+                      >
+                        <Edit className="w-4 h-4" />
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(selectedRoute!)}
                         className="flex items-center gap-2 px-4 py-2 bg-bg-card border border-border-dark rounded-lg hover:bg-danger/10 hover:text-danger transition-colors text-sm"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1037,8 +1053,8 @@ export default function RouteManagement() {
               onChange={handleWaypointsChange}
               onValidationError={handleValidationError}
               editMode
-              center={[39.91, 116.47]}
-              zoom={13}
+              center={editMapCenter}
+              zoom={editMapZoom}
             />
           </div>
         </div>
@@ -1167,89 +1183,47 @@ export default function RouteManagement() {
         width="max-w-5xl"
         footer={
           <>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-text-muted">速度:</span>
-              {[0.5, 1, 2, 5].map((speed) => (
-                <button
-                  key={speed}
-                  onClick={() => setSimulationSpeed(speed)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                    simulationSpeed === speed
-                      ? 'bg-cyan text-bg-dark'
-                      : 'bg-bg-card text-text-secondary hover:text-text-primary border border-border-dark'
-                  }`}
-                >
-                  {speed}x
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={resetSimulation}
-                className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm flex items-center gap-2"
-              >
-                <RotateCcw className="w-4 h-4" />
-                重置
-              </button>
-              <button
-                onClick={toggleSimulation}
-                className="px-4 py-2 bg-amber text-bg-dark font-medium rounded-lg hover:bg-amber/90 transition-colors text-sm flex items-center gap-2"
-              >
-                {simulationPlaying ? (
-                  <>
-                    <Pause className="w-4 h-4" />
-                    暂停
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4" />
-                    {simulationProgress === 100 ? '重新播放' : '开始模拟'}
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={resetSimulation}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm flex items-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              重置
+            </button>
+            <button
+              onClick={toggleSimulation}
+              className="px-4 py-2 bg-amber text-bg-dark font-medium rounded-lg hover:bg-amber/90 transition-colors text-sm flex items-center gap-2"
+            >
+              {simulationPlaying ? (
+                <>
+                  <Pause className="w-4 h-4" />
+                  暂停
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  {simulationProgress === 100 ? '重新播放' : '开始模拟'}
+                </>
+              )}
+            </button>
           </>
         }
       >
-        <div className="relative h-[500px]">
-          <div className="absolute top-4 right-4 z-[500] flex gap-2">
-            <button
-              onClick={() => setShowTowers(!showTowers)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 backdrop-blur ${
-                showTowers
-                  ? 'bg-purple-500/80 text-white'
-                  : 'bg-bg-panel/80 text-text-muted hover:text-text-primary border border-border-dark'
-              }`}
-            >
-              <MapPin className="w-3 h-3" />
-              杆塔
-            </button>
-            <button
-              onClick={() => setShowSections(!showSections)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 backdrop-blur ${
-                showSections
-                  ? 'bg-purple-500/80 text-white'
-                  : 'bg-bg-panel/80 text-text-muted hover:text-text-primary border border-border-dark'
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              区段
-            </button>
-          </div>
+        <div className="h-[500px]">
           <RouteEditor
             waypoints={previewWaypoints}
             onChange={() => {}}
-            showTowers={showTowers}
+            showTowers
             towerPoints={towerPoints}
-            showSections={showSections}
+            showSections
             sectionLines={sectionLines}
             editMode={false}
             readOnly
             simulationMode
             simulationProgress={simulationProgress}
             center={
-              routeDetail?.coordinates?.[0]
-                ? [routeDetail.coordinates[0][1], routeDetail.coordinates[0][0]]
+              selectedRoute?.coordinates?.[0]
+                ? [selectedRoute.coordinates[0][1], selectedRoute.coordinates[0][0]]
                 : [39.91, 116.47]
             }
             zoom={13}
