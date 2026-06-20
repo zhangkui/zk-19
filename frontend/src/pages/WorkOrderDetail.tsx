@@ -15,6 +15,8 @@ import {
   FileCheck,
 } from 'lucide-react'
 import dayjs from 'dayjs'
+import { useAuthStore } from '../store/authStore'
+import { isAdmin, isCrew } from '../utils'
 
 const severityColors: Record<string, string> = {
   critical: 'danger',
@@ -55,6 +57,7 @@ const actionLabels: Record<string, string> = {
 
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuthStore()
   const navigate = useNavigate()
   const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null)
   const [users, setUsers] = useState<UserType[]>([])
@@ -62,6 +65,16 @@ export default function WorkOrderDetail() {
   const [noteText, setNoteText] = useState('')
   const [selectedAssignee, setSelectedAssignee] = useState<number | ''>('')
   const [showAssignModal, setShowAssignModal] = useState(false)
+
+  const canOperate = workOrder
+    ? isAdmin(user) || (isCrew(user) && workOrder.assignee === user?.id)
+    : false
+
+  const canAssign = workOrder && isAdmin(user) && ['created'].includes(workOrder.status)
+  const canStart = workOrder && canOperate && ['assigned'].includes(workOrder.status)
+  const canSubmitReview = workOrder && canOperate && ['processing'].includes(workOrder.status)
+  const canReview = workOrder && isAdmin(user) && ['review'].includes(workOrder.status)
+  const canClose = workOrder && isAdmin(user) && ['review', 'processing'].includes(workOrder.status)
 
   useEffect(() => {
     if (id) {
@@ -118,12 +131,6 @@ export default function WorkOrderDetail() {
       </div>
     )
   }
-
-  const canAssign = ['created'].includes(workOrder.status)
-  const canStart = ['assigned'].includes(workOrder.status)
-  const canSubmitReview = ['processing'].includes(workOrder.status)
-  const canReview = ['review'].includes(workOrder.status)
-  const canClose = ['review', 'processing'].includes(workOrder.status)
 
   return (
     <div className="space-y-6">

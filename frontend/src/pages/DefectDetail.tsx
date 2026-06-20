@@ -14,15 +14,20 @@ import {
   Clock,
 } from 'lucide-react'
 import dayjs from 'dayjs'
+import { useAuthStore } from '../store/authStore'
+import { isAdmin, isReviewer } from '../utils'
 
 export default function DefectDetail() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuthStore()
   const navigate = useNavigate()
   const [defect, setDefect] = useState<Defect | null>(null)
   const [relatedAlerts, setRelatedAlerts] = useState<Alert[]>([])
   const [relatedWorkOrders, setRelatedWorkOrders] = useState<WorkOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [reviewNote, setReviewNote] = useState('')
+
+  const canReview = defect?.status === 'pending' && (isAdmin(user) || isReviewer(user))
 
   useEffect(() => {
     if (id) {
@@ -100,7 +105,7 @@ export default function DefectDetail() {
             </p>
           </div>
         </div>
-        {defect.status === 'pending' && (
+        {canReview && (
           <div className="flex items-center gap-3">
             <button
               onClick={() => handleReview('reject')}
@@ -159,7 +164,7 @@ export default function DefectDetail() {
           </div>
 
           {/* Description */}
-          {defect.status === 'pending' && (
+          {canReview && (
             <div className="bg-bg-panel border border-border-dark rounded-xl p-5">
               <h3 className="font-semibold mb-3">审核意见</h3>
               <textarea

@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.filters import SearchFilter
+from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 import uuid
@@ -18,12 +19,21 @@ class WorkOrderViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status', 'severity', 'priority', 'tower', 'assignee']
     search_fields = ['code', 'title', 'description']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if user.role == 'crew':
+            qs = qs.filter(assignee=user)
+        return qs
+
     def get_serializer_class(self):
         if self.action == 'list':
             return WorkOrderListSerializer
         return WorkOrderDetailSerializer
 
     def perform_create(self, serializer):
+        if self.request.user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以创建工单')
         code = f'WO{timezone.now().strftime("%Y%m%d")}{uuid.uuid4().hex[:6].upper()}'
         serializer.save(
             created_by=self.request.user,
@@ -51,12 +61,19 @@ class WorkOrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def transition(self, request, pk=None):
         work_order = self.get_object()
+        user = request.user
         action = request.data.get('action')
         note = request.data.get('note', '')
         assignee_id = request.data.get('assignee_id')
 
         if not action:
             return Response({'error': 'Action required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user.role == 'crew':
+            if work_order.assignee_id != user.id:
+                return Response({'error': '无权操作此工单'}, status=status.HTTP_403_FORBIDDEN)
+            if action not in ['start', 'submit_review']:
+                return Response({'error': '无权执行此操作'}, status=status.HTTP_403_FORBIDDEN)
 
         old_status = work_order.status
 

@@ -13,6 +13,8 @@ import {
   Clock,
 } from 'lucide-react'
 import dayjs from 'dayjs'
+import { useAuthStore } from '../store/authStore'
+import { isAdmin, isReviewer, isPilot, isCrew } from '../utils'
 
 const severityColors: Record<string, string> = {
   critical: 'danger',
@@ -27,6 +29,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
 }
 
 export default function Defects() {
+  const { user } = useAuthStore()
   const [defects, setDefects] = useState<Defect[]>([])
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
@@ -64,6 +67,9 @@ export default function Defects() {
           <h2 className="text-xl font-bold">缺陷识别</h2>
           <p className="text-text-muted text-sm mt-1">
             共 {defects.length} 条缺陷记录
+            {isReviewer(user) && '（审核员模式：可审核待确认缺陷）'}
+            {isPilot(user) && '（仅显示我执行任务产生的缺陷）'}
+            {isCrew(user) && '（仅显示已确认的缺陷）'}
           </p>
         </div>
       </div>

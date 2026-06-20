@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.filters import SearchFilter
+from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Count
 from django.utils import timezone
@@ -30,6 +31,21 @@ class DroneViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status']
     search_fields = ['name', 'model', 'serial_number']
 
+    def perform_create(self, serializer):
+        if self.request.user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以创建无人机')
+        serializer.save()
+
+    def perform_update(self, serializer):
+        if self.request.user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以修改无人机')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if self.request.user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以删除无人机')
+        instance.delete()
+
 
 class FlightRouteViewSet(viewsets.ModelViewSet):
     queryset = FlightRoute.objects.all()
@@ -43,6 +59,21 @@ class FlightRouteViewSet(viewsets.ModelViewSet):
             return FlightRouteListSerializer
         return FlightRouteSerializer
 
+    def perform_create(self, serializer):
+        if self.request.user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以创建航线')
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        if self.request.user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以修改航线')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if self.request.user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以删除航线')
+        instance.delete()
+
 
 class InspectionTaskViewSet(viewsets.ModelViewSet):
     queryset = InspectionTask.objects.all()
@@ -51,21 +82,46 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     filterset_fields = ['status', 'route', 'drone', 'pilot']
     search_fields = ['code', 'name']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if user.role == 'pilot':
+            qs = qs.filter(pilot=user)
+        return qs
+
     def get_serializer_class(self):
         if self.action == 'list':
             return InspectionTaskListSerializer
         return InspectionTaskSerializer
 
     def perform_create(self, serializer):
+        user = self.request.user
+        if user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以创建任务')
         if not serializer.validated_data.get('code'):
             code = f'TASK{timezone.now().strftime("%Y%m%d")}{uuid.uuid4().hex[:6].upper()}'
             serializer.save(created_by=self.request.user, code=code)
         else:
             serializer.save(created_by=self.request.user)
 
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以修改任务')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+        if user.role != 'admin':
+            raise PermissionDenied('只有调度管理员可以删除任务')
+        instance.delete()
+
     @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
     def upload(self, request, pk=None):
         task = self.get_object()
+        user = request.user
+        if user.role == 'pilot' and task.pilot_id != user.id:
+            return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
         files = request.FILES.getlist('files')
         tower_id = request.data.get('tower_id')
 
@@ -101,6 +157,9 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
         task = self.get_object()
+        user = request.user
+        if user.role == 'pilot' and task.pilot_id != user.id:
+            return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
         if task.status not in ['pending', 'paused']:
             return Response({'error': 'Task cannot be started'}, status=status.HTTP_400_BAD_REQUEST)
         task.status = 'running'
@@ -111,6 +170,9 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
         task = self.get_object()
+        user = request.user
+        if user.role == 'pilot' and task.pilot_id != user.id:
+            return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
         if task.status != 'running':
             return Response({'error': 'Task is not running'}, status=status.HTTP_400_BAD_REQUEST)
         task.status = 'completed'
@@ -134,6 +196,17 @@ class DefectViewSet(viewsets.ModelViewSet):
     filterset_fields = ['defect_type', 'severity', 'status', 'tower', 'task']
     search_fields = ['description', 'subtype']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if user.role == 'reviewer':
+            pass
+        elif user.role == 'pilot':
+            qs = qs.filter(task__pilot=user)
+        elif user.role == 'crew':
+            qs = qs.filter(status='confirmed')
+        return qs
+
     def get_serializer_class(self):
         if self.action == 'list':
             return DefectListSerializer
@@ -142,6 +215,9 @@ class DefectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
         defect = self.get_object()
+        user = request.user
+        if user.role not in ['admin', 'reviewer']:
+            return Response({'error': '无权执行审核操作'}, status=status.HTTP_403_FORBIDDEN)
         if defect.status != 'pending':
             return Response({'error': 'Defect already reviewed'}, status=status.HTTP_400_BAD_REQUEST)
 

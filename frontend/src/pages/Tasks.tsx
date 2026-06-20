@@ -19,6 +19,8 @@ import {
   XCircle,
 } from 'lucide-react'
 import dayjs from 'dayjs'
+import { useAuthStore } from '../store/authStore'
+import { isAdmin, isPilot } from '../utils'
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   pending: { label: '待执行', color: 'amber', icon: Clock },
@@ -29,6 +31,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
 }
 
 export default function Tasks() {
+  const { user } = useAuthStore()
   const [tasks, setTasks] = useState<InspectionTask[]>([])
   const [routes, setRoutes] = useState<FlightRoute[]>([])
   const [drones, setDrones] = useState<Drone[]>([])
@@ -47,6 +50,13 @@ export default function Tasks() {
     notes: '',
   })
   const navigate = useNavigate()
+
+  const canCreate = isAdmin(user)
+  const canOperateTask = (task: InspectionTask) => {
+    if (isAdmin(user)) return true
+    if (isPilot(user)) return task.pilot === user?.id
+    return false
+  }
 
   useEffect(() => {
     loadData()
@@ -134,14 +144,17 @@ export default function Tasks() {
           <h2 className="text-xl font-bold">巡检任务</h2>
           <p className="text-text-muted text-sm mt-1">
             共 {tasks.length} 个任务
+            {isPilot(user) && '（仅显示分配给我的任务）'}
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
-          <Plus className="w-4 h-4" />
-          新建任务
-        </button>
+        {canCreate && (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
+            <Plus className="w-4 h-4" />
+            新建任务
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -262,15 +275,21 @@ export default function Tasks() {
                       <button
                       onClick={(e) => {
                         e.stopPropagation()
+                        if (!canOperateTask(task)) {
+                          navigate(`/tasks/${task.id}`)
+                          return
+                        }
                         if (task.status === 'pending') handleStartTask(task.id)
                         else if (task.status === 'running') handleCompleteTask(task.id)
+                        else navigate(`/tasks/${task.id}`)
                       }}
                       className="text-cyan hover:text-cyan-dark text-sm"
                     >
-                      {task.status === 'pending' && '开始'}
-                      {task.status === 'running' && '完成'}
+                      {canOperateTask(task) && task.status === 'pending' && '开始'}
+                      {canOperateTask(task) && task.status === 'running' && '完成'}
                       {task.status === 'completed' && '查看'}
-                      {task.status !== 'pending' && task.status !== 'running' && task.status !== 'completed' && '详情'}
+                      {!canOperateTask(task) && '详情'}
+                      {task.status !== 'pending' && task.status !== 'running' && task.status !== 'completed' && canOperateTask(task) && '详情'}
                       <ChevronRight className="w-4 h-4 inline ml-1" />
                     </button>
                     </td>

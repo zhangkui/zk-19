@@ -16,6 +16,7 @@ import Replay from './pages/Replay'
 import WorkOrders from './pages/WorkOrders'
 import WorkOrderDetail from './pages/WorkOrderDetail'
 import Analytics from './pages/Analytics'
+import { canAccessPath, isAdmin } from './utils'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -28,8 +29,29 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RoleProtectedRoute({
+  children,
+  path,
+}: {
+  children: React.ReactNode
+  path: string
+}) {
+  const { user, isAuthenticated } = useAuthStore()
+  const location = useLocation()
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (!canAccessPath(user, path)) {
+    return <Navigate to="/" replace />
+  }
+
+  return <>{children}</>
+}
+
 function App() {
-  const { isAuthenticated, fetchMe } = useAuthStore()
+  const { isAuthenticated, fetchMe, user } = useAuthStore()
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -49,18 +71,102 @@ function App() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route path="lines" element={<LineMap />} />
-        <Route path="routes" element={<RouteManagement />} />
-        <Route path="drones" element={<Drones />} />
-        <Route path="tasks" element={<Tasks />} />
-        <Route path="tasks/:id" element={<TaskDetail />} />
-        <Route path="defects" element={<Defects />} />
-        <Route path="defects/:id" element={<DefectDetail />} />
-        <Route path="alerts" element={<Alerts />} />
-        <Route path="replay" element={<Replay />} />
-        <Route path="workorders" element={<WorkOrders />} />
-        <Route path="workorders/:id" element={<WorkOrderDetail />} />
-        <Route path="analytics" element={<Analytics />} />
+        <Route
+          path="lines"
+          element={
+            <RoleProtectedRoute path="/lines">
+              <LineMap />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="routes"
+          element={
+            <RoleProtectedRoute path="/routes">
+              <RouteManagement />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="drones"
+          element={
+            <RoleProtectedRoute path="/drones">
+              <Drones />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="tasks"
+          element={
+            <RoleProtectedRoute path="/tasks">
+              <Tasks />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="tasks/:id"
+          element={
+            <RoleProtectedRoute path="/tasks">
+              <TaskDetail />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="defects"
+          element={
+            <RoleProtectedRoute path="/defects">
+              <Defects />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="defects/:id"
+          element={
+            <RoleProtectedRoute path="/defects">
+              <DefectDetail />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="alerts"
+          element={
+            <RoleProtectedRoute path="/alerts">
+              <Alerts />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="replay"
+          element={
+            <RoleProtectedRoute path="/replay">
+              <Replay />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="workorders"
+          element={
+            <RoleProtectedRoute path="/workorders">
+              <WorkOrders />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="workorders/:id"
+          element={
+            <RoleProtectedRoute path="/workorders">
+              <WorkOrderDetail />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="analytics"
+          element={
+            <RoleProtectedRoute path="/analytics">
+              <Analytics />
+            </RoleProtectedRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

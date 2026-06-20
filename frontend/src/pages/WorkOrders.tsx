@@ -14,6 +14,8 @@ import {
   User,
 } from 'lucide-react'
 import dayjs from 'dayjs'
+import { useAuthStore } from '../store/authStore'
+import { isAdmin, isCrew } from '../utils'
 
 const severityColors: Record<string, string> = {
   critical: 'danger',
@@ -47,6 +49,7 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function WorkOrders() {
+  const { user } = useAuthStore()
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
   const [towers, setTowers] = useState<Tower[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,6 +68,8 @@ export default function WorkOrders() {
     planned_end: '',
   })
   const navigate = useNavigate()
+
+  const canCreate = isAdmin(user)
 
   useEffect(() => {
     loadWorkOrders()
@@ -142,14 +147,17 @@ export default function WorkOrders() {
           <h2 className="text-xl font-bold">消缺工单</h2>
           <p className="text-text-muted text-sm mt-1">
             共 {workOrders.length} 条工单
+            {isCrew(user) && '（仅显示分配给我的工单）'}
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
-          <Plus className="w-4 h-4" />
-          新建工单
-        </button>
+        {canCreate && (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
+            <Plus className="w-4 h-4" />
+            新建工单
+          </button>
+        )}
       </div>
 
       {/* Status stats */}

@@ -7,8 +7,10 @@ import {
   Power,
   FileSearch,
 } from 'lucide-react'
+import { canAccessPath, ROLE_LABELS } from '../utils'
+import type { Role } from '../utils'
 
-const menuItems = [
+const allMenuItems = [
   { path: '/', label: '总览大屏', icon: LayoutDashboard },
   { path: '/lines', label: '线路地图', icon: Map },
   { path: '/routes', label: '航线管理', icon: Route },
@@ -21,11 +23,20 @@ const menuItems = [
   { path: '/analytics', label: '统计分析', icon: BarChart3 },
 ]
 
+const roleColors: Record<Role, string> = {
+  admin: 'text-cyan',
+  pilot: 'text-amber',
+  reviewer: 'text-success',
+  crew: 'text-warning',
+}
+
 export default function Layout({ children }: { children?: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
+
+  const menuItems = allMenuItems.filter((item) => canAccessPath(user, item.path))
 
   const handleLogout = () => {
     logout()
@@ -116,7 +127,9 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
               </div>
               <div className="text-sm">
                 <p className="font-medium">{user?.name || user?.username}</p>
-                <p className="text-xs text-text-muted">{user?.role_display || user?.role}</p>
+                <p className={`text-xs ${user?.role ? roleColors[user.role as Role] : 'text-text-muted'}`}>
+                  {user?.role_display || (user?.role ? ROLE_LABELS[user.role as Role] : '')}
+                </p>
               </div>
             </div>
             <button

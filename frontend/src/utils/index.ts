@@ -1,8 +1,59 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import type { User } from '../types'
+
+export type Role = 'admin' | 'pilot' | 'reviewer' | 'crew'
+
+export const ROLE_LABELS: Record<Role, string> = {
+  admin: '调度管理员',
+  pilot: '无人机飞手',
+  reviewer: '缺陷审核员',
+  crew: '检修班组',
+}
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+export function hasRole(user: User | null, ...roles: Role[]): boolean {
+  if (!user) return false
+  return roles.includes(user.role as Role)
+}
+
+export function isAdmin(user: User | null): boolean {
+  return hasRole(user, 'admin')
+}
+
+export function isPilot(user: User | null): boolean {
+  return hasRole(user, 'pilot')
+}
+
+export function isReviewer(user: User | null): boolean {
+  return hasRole(user, 'reviewer')
+}
+
+export function isCrew(user: User | null): boolean {
+  return hasRole(user, 'crew')
+}
+
+export const MENU_ROLE_ACCESS: Record<string, Role[]> = {
+  '/': ['admin', 'pilot', 'reviewer', 'crew'],
+  '/lines': ['admin', 'pilot', 'reviewer', 'crew'],
+  '/routes': ['admin'],
+  '/drones': ['admin'],
+  '/tasks': ['admin', 'pilot'],
+  '/defects': ['admin', 'reviewer', 'pilot', 'crew'],
+  '/alerts': ['admin', 'reviewer'],
+  '/replay': ['admin', 'pilot', 'reviewer'],
+  '/workorders': ['admin', 'crew'],
+  '/analytics': ['admin'],
+}
+
+export function canAccessPath(user: User | null, path: string): boolean {
+  if (!user) return false
+  const allowedRoles = MENU_ROLE_ACCESS[path]
+  if (!allowedRoles) return isAdmin(user)
+  return hasRole(user, ...allowedRoles)
 }
 
 export const severityColors: Record<string, string> = {

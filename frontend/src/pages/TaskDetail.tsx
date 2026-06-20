@@ -17,9 +17,12 @@ import {
 } from 'lucide-react'
 import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip } from 'react-leaflet'
 import dayjs from 'dayjs'
+import { useAuthStore } from '../store/authStore'
+import { isAdmin, isPilot } from '../utils'
 
 export default function TaskDetail() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuthStore()
   const navigate = useNavigate()
   const [task, setTask] = useState<InspectionTask | null>(null)
   const [mediaList, setMediaList] = useState<InspectionMedia[]>([])
@@ -28,6 +31,10 @@ export default function TaskDetail() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const canOperate = task
+    ? isAdmin(user) || (isPilot(user) && task.pilot === user?.id)
+    : false
 
   useEffect(() => {
     if (id) {
@@ -52,9 +59,29 @@ export default function TaskDetail() {
     }
   }
 
+  const handleStart = async () => {
+    if (!task || !canOperate) return
+    try {
+      await tasksApi.start(task.id)
+      loadData()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleComplete = async () => {
+    if (!task || !canOperate) return
+    try {
+      await tasksApi.complete(task.id)
+      loadData()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
-    if (!files || files.length === 0 || !task) return
+    if (!files || files.length === 0 || !task || !canOperate) return
 
     setUploading(true)
     const formData = new FormData()
@@ -111,13 +138,15 @@ export default function TaskDetail() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {task.status === 'pending' && (
-            <button className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
+          {canOperate && task.status === 'pending' && (
+            <button
+              onClick={handleStart}
+              className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors">
               <Play className="w-4 h-4" />
               开始任务
             </button>
           )}
-          {task.status === 'running' && (
+          {canOperate && task.status === 'running' && (
             <>
               <input
                 ref={fileInputRef}
@@ -135,7 +164,9 @@ export default function TaskDetail() {
                 <Upload className="w-4 h-4" />
                 {uploading ? '上传中...' : '上传影像'}
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 border border-success/50 text-success rounded-lg hover:bg-success/10 transition-colors">
+              <button
+                onClick={handleComplete}
+                className="flex items-center gap-2 px-4 py-2 border border-success/50 text-success rounded-lg hover:bg-success/10 transition-colors">
                 <Pause className="w-4 h-4" />
                 完成任务
               </button>

@@ -13,6 +13,8 @@ import {
   Layers,
 } from 'lucide-react'
 import { Polyline, CircleMarker, Tooltip } from 'react-leaflet'
+import { useAuthStore } from '../store/authStore'
+import { isAdmin } from '../utils'
 
 const VOLTAGE_OPTIONS = [
   { value: '110kV', label: '110kV' },
@@ -29,7 +31,19 @@ const TOWER_TYPE_OPTIONS = [
   { value: 'tension', label: '耐张塔' },
 ]
 
+const SECTION_COLORS = [
+  '#22D3EE',
+  '#3DD68C',
+  '#F5B301',
+  '#FF8A00',
+  '#9333EA',
+  '#EC4899',
+  '#06B6D4',
+  '#84CC16',
+]
+
 export default function LineMap() {
+  const { user } = useAuthStore()
   const [lines, setLines] = useState<Line[]>([])
   const [towers, setTowers] = useState<Tower[]>([])
   const [sections, setSections] = useState<Section[]>([])
@@ -38,6 +52,7 @@ export default function LineMap() {
   const [loading, setLoading] = useState(true)
   const [sidebarTab, setSidebarTab] = useState<'lines' | 'towers' | 'sections'>('lines')
   const [submitting, setSubmitting] = useState(false)
+  const [showSections, setShowSections] = useState(true)
 
   const [lineModalOpen, setLineModalOpen] = useState(false)
   const [editingLine, setEditingLine] = useState<Line | null>(null)
@@ -67,6 +82,14 @@ export default function LineMap() {
     end_km: '' as number | string,
     description: '',
   })
+
+  const canManage = isAdmin(user)
+
+  const getSectionColor = (sectionId: number | null): string => {
+    if (!sectionId) return '#64748B'
+    const idx = sections.findIndex((s) => s.id === sectionId)
+    return SECTION_COLORS[idx % SECTION_COLORS.length]
+  }
 
   useEffect(() => {
     loadLines()
@@ -265,36 +288,51 @@ export default function LineMap() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={openCreateLine}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm"
+            onClick={() => setShowSections(!showSections)}
+            className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors text-sm ${
+              showSections
+                ? 'border-success/40 text-success bg-success/10'
+                : 'border-border-dark text-text-secondary hover:text-text-primary hover:bg-white/5'
+            }`}
           >
-            <Plus className="w-4 h-4" />
-            新增线路
+            <Layers className="w-4 h-4" />
+            区段显示
           </button>
-          <button
-            onClick={openEditLine}
-            disabled={!selectedLine}
-            className="flex items-center gap-2 px-4 py-2 border border-cyan/40 text-cyan font-medium rounded-lg hover:bg-cyan/10 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Edit className="w-4 h-4" />
-            编辑线路
-          </button>
-          <button
-            onClick={openCreateTower}
-            disabled={!selectedLine}
-            className="flex items-center gap-2 px-4 py-2 border border-amber/40 text-amber font-medium rounded-lg hover:bg-amber/10 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-4 h-4" />
-            新增杆塔
-          </button>
-          <button
-            onClick={openCreateSection}
-            disabled={!selectedLine}
-            className="flex items-center gap-2 px-4 py-2 border border-success/40 text-success font-medium rounded-lg hover:bg-success/10 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-4 h-4" />
-            新增区段
-          </button>
+          {canManage && (
+            <>
+              <button
+                onClick={openCreateLine}
+                className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                新增线路
+              </button>
+              <button
+                onClick={openEditLine}
+                disabled={!selectedLine}
+                className="flex items-center gap-2 px-4 py-2 border border-cyan/40 text-cyan font-medium rounded-lg hover:bg-cyan/10 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Edit className="w-4 h-4" />
+                编辑线路
+              </button>
+              <button
+                onClick={openCreateTower}
+                disabled={!selectedLine}
+                className="flex items-center gap-2 px-4 py-2 border border-amber/40 text-amber font-medium rounded-lg hover:bg-amber/10 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" />
+                新增杆塔
+              </button>
+              <button
+                onClick={openCreateSection}
+                disabled={!selectedLine}
+                className="flex items-center gap-2 px-4 py-2 border border-success/40 text-success font-medium rounded-lg hover:bg-success/10 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" />
+                新增区段
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -408,22 +446,32 @@ export default function LineMap() {
               </div>
             ) : (
               <div className="divide-y divide-border-dark">
-                {sections.map((section) => (
-                  <div
-                    key={section.id}
-                    className="p-3 hover:bg-white/5 border-l-2 border-transparent transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-sm">{section.name}</span>
-                      <Badge variant="default" size="sm">
-                        {section.tower_count} 塔
-                      </Badge>
+                {sections.map((section) => {
+                  const color = getSectionColor(section.id)
+                  return (
+                    <div
+                      key={section.id}
+                      className="p-3 hover:bg-white/5 border-l-2 border-transparent transition-colors"
+                      style={{ borderLeftColor: color }}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-sm"
+                            style={{ backgroundColor: color }}
+                          ></div>
+                          <span className="font-medium text-sm">{section.name}</span>
+                        </div>
+                        <Badge variant="default" size="sm">
+                          {section.tower_count} 塔
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-text-muted">
+                        {section.start_km}km - {section.end_km}km
+                      </div>
                     </div>
-                    <div className="text-xs text-text-muted">
-                      {section.start_km}km - {section.end_km}km
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
                 {sections.length === 0 && (
                   <div className="p-8 text-center text-text-muted text-sm">
                     <Layers className="w-10 h-10 mx-auto mb-2 opacity-40" />
@@ -502,17 +550,43 @@ export default function LineMap() {
                   </Polyline>
                 )
               ))}
+              {showSections && sections.map((section) => {
+                const sectionTowers = towers.filter((t) => t.section === section.id && t.coordinates)
+                if (sectionTowers.length < 2) return null
+                const sortedTowers = [...sectionTowers].sort((a, b) => a.sequence - b.sequence)
+                const positions = sortedTowers.map((t) => [t.coordinates!.lat, t.coordinates!.lon])
+                const color = getSectionColor(section.id)
+                return (
+                  <Polyline
+                    key={`section-line-${section.id}`}
+                    positions={positions}
+                    color={color}
+                    weight={8}
+                    opacity={0.35}
+                    eventHandlers={{
+                      click: () => {},
+                    }}
+                  >
+                    <Tooltip direction="top" offset={[0, -10]} opacity={1}>
+                      <div className="text-xs">
+                        <p className="font-semibold" style={{ color }}>{section.name}</p>
+                        <p>{section.start_km}km - {section.end_km}km</p>
+                      </div>
+                    </Tooltip>
+                  </Polyline>
+                )
+              })}
               {towers.map((tower) =>
                 tower.coordinates ? (
                   <CircleMarker
                     key={tower.id}
                     center={[tower.coordinates.lat, tower.coordinates.lon]}
-                    radius={selectedTower?.id === tower.id ? 8 : 5}
-                    fillColor={selectedTower?.id === tower.id ? '#F5B301' : '#22D3EE'}
-                    color={selectedTower?.id === tower.id ? '#F5B301' : '#22D3EE'}
+                    radius={selectedTower?.id === tower.id ? 10 : 7}
+                    fillColor={selectedTower?.id === tower.id ? '#F5B301' : (showSections ? getSectionColor(tower.section) : '#22D3EE')}
+                    color={selectedTower?.id === tower.id ? '#F5B301' : (showSections ? getSectionColor(tower.section) : '#22D3EE')}
                     weight={2}
                     opacity={1}
-                    fillOpacity={0.8}
+                    fillOpacity={0.9}
                     eventHandlers={{
                       click: () => setSelectedTower(tower),
                     }}
@@ -521,6 +595,11 @@ export default function LineMap() {
                       <div className="text-xs">
                         <p className="font-semibold">{tower.code}</p>
                         <p>{tower.tower_type_display}</p>
+                        {showSections && tower.section && (
+                          <p style={{ color: getSectionColor(tower.section) }}>
+                            {sections.find((s) => s.id === tower.section)?.name}
+                          </p>
+                        )}
                       </div>
                     </Tooltip>
                   </CircleMarker>
@@ -529,16 +608,39 @@ export default function LineMap() {
             </MapComponent>
 
             {/* Map legend */}
-            <div className="absolute top-4 right-4 bg-bg-panel/90 backdrop-blur border border-border-dark rounded-lg p-3 text-xs">
-              <p className="font-medium mb-2">图例</p>
-              <div className="space-y-1.5">
-                {Object.entries(voltageColors).slice(0, 4).map(([label, color]) => (
-                  <div key={label} className="flex items-center gap-2">
-                    <div className="w-3 h-0.5" style={{ backgroundColor: color }}></div>
-                    <span className="text-text-muted">{label}</span>
-                  </div>
-                ))}
+            <div className="absolute top-4 right-4 bg-bg-panel/90 backdrop-blur border border-border-dark rounded-lg p-3 text-xs space-y-3 max-w-[220px]">
+              <div>
+                <p className="font-medium mb-2">电压等级</p>
+                <div className="space-y-1.5">
+                  {Object.entries(voltageColors).slice(0, 4).map(([label, color]) => (
+                    <div key={label} className="flex items-center gap-2">
+                      <div className="w-3 h-0.5" style={{ backgroundColor: color }}></div>
+                      <span className="text-text-muted">{label}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
+              {showSections && sections.length > 0 && (
+                <div>
+                  <p className="font-medium mb-2">区段范围</p>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {sections.map((section) => {
+                      const color = getSectionColor(section.id)
+                      return (
+                        <div key={section.id} className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-sm"
+                            style={{ backgroundColor: color, opacity: 0.8 }}
+                          ></div>
+                          <span className="text-text-muted truncate" title={section.name}>
+                            {section.name}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
