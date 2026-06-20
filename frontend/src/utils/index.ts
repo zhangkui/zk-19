@@ -136,3 +136,79 @@ export const defectSubtypeLabels: Record<string, Record<string, string>> = {
   },
   other: { other: '其他' },
 }
+
+export function validateLon(value: number): string | null {
+  if (isNaN(value)) {
+    return '经度格式不正确，必须为数字'
+  }
+  if (value < -180 || value > 180) {
+    return '经度范围必须在-180到180之间'
+  }
+  return null
+}
+
+export function validateLat(value: number): string | null {
+  if (isNaN(value)) {
+    return '纬度格式不正确，必须为数字'
+  }
+  if (value < -90 || value > 90) {
+    return '纬度范围必须在-90到90之间'
+  }
+  return null
+}
+
+export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000
+  const phi1 = (lat1 * Math.PI) / 180
+  const phi2 = (lat2 * Math.PI) / 180
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(deltaPhi / 2) ** 2 +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+export function calculateTotalDistance(waypoints: { lat: number; lon: number }[]): number {
+  if (waypoints.length < 2) return 0
+  let total = 0
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    total += calculateDistance(
+      waypoints[i].lat,
+      waypoints[i].lon,
+      waypoints[i + 1].lat,
+      waypoints[i + 1].lon
+    )
+  }
+  return total
+}
+
+export function calculateDuration(distance: number, speed: number): number {
+  if (distance <= 0 || speed <= 0) return 0
+  return Math.ceil(distance / speed / 60)
+}
+
+export function validateAltitude(altitude: number): { valid: boolean; message: string } {
+  const minAltitude = 30
+  const maxAltitude = 120
+  if (altitude < minAltitude) {
+    return { valid: false, message: `飞行高度过低，建议不低于${minAltitude}米` }
+  }
+  if (altitude > maxAltitude) {
+    return { valid: false, message: `飞行高度过高，建议不超过${maxAltitude}米` }
+  }
+  return { valid: true, message: '高度合理' }
+}
+
+export function validateSpeed(speed: number): { valid: boolean; message: string } {
+  const minSpeed = 2
+  const maxSpeed = 15
+  if (speed < minSpeed) {
+    return { valid: false, message: `飞行速度过慢，建议不低于${minSpeed}m/s` }
+  }
+  if (speed > maxSpeed) {
+    return { valid: false, message: `飞行速度过快，建议不超过${maxSpeed}m/s` }
+  }
+  return { valid: true, message: '速度合理' }
+}

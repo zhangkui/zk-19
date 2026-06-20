@@ -79,6 +79,65 @@ export interface Drone {
   created_at: string
 }
 
+export interface Waypoint {
+  lon: number
+  lat: number
+  altitude?: number
+  speed?: number
+  index?: number
+}
+
+export interface EditableWaypoint {
+  lon: number
+  lat: number
+  index: number
+}
+
+export interface ValidationResult {
+  valid: boolean
+  message: string
+}
+
+export interface RouteVersion {
+  id: number
+  route: number
+  version: number
+  name: string
+  line: number
+  line_name: string
+  coordinates: [number, number][]
+  waypoints_data: any[]
+  waypoint_count: number
+  altitude: number
+  speed: number
+  distance: number
+  estimated_duration: number
+  status: string
+  status_display: string
+  description: string
+  created_by: number | null
+  created_by_name: string
+  created_at: string
+}
+
+export interface RouteNearbyTower {
+  id: number
+  code: string
+  coordinates: { lon: number; lat: number } | null
+  section: number | null
+  section_name: string
+  height: number
+  tower_type: string
+  sequence: number
+}
+
+export interface RouteAffectedSection {
+  id: number
+  name: string
+  start_km: number
+  end_km: number
+}
+
 export interface FlightRoute {
   id: number
   name: string
@@ -87,13 +146,37 @@ export interface FlightRoute {
   waypoints_data: any[]
   altitude: number
   speed: number
+  distance: number
   estimated_duration: number
-  status: 'draft' | 'approved' | 'archived'
+  status: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'archived'
   status_display: string
   waypoint_count: number
   description: string
   coordinates: [number, number][]
+  version: number
+  review_note: string
+  reviewed_by: number | null
+  reviewed_by_name: string
+  reviewed_at: string | null
+  created_by: number | null
+  created_by_name: string
   created_at: string
+  updated_at: string
+  altitude_validation?: ValidationResult
+  speed_validation?: ValidationResult
+  nearby_towers?: RouteNearbyTower[]
+  affected_sections?: RouteAffectedSection[]
+  versions?: RouteVersion[]
+}
+
+export interface RouteValidation {
+  altitude: ValidationResult
+  speed: ValidationResult
+  distance: number
+  duration: number
+  tower_count: number
+  section_count: number
+  is_valid: boolean
 }
 
 export interface InspectionTask {

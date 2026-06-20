@@ -11,10 +11,11 @@ from django.utils import timezone
 from datetime import datetime
 import uuid
 
-from .models import Drone, FlightRoute, InspectionTask, InspectionMedia, Defect, Alert
+from .models import Drone, FlightRoute, FlightRouteVersion, InspectionTask, InspectionMedia, Defect, Alert
 from .serializers import (
     DroneSerializer,
-    FlightRouteSerializer, FlightRouteListSerializer,
+    FlightRouteSerializer, FlightRouteListSerializer, FlightRouteDetailSerializer,
+    FlightRouteVersionSerializer,
     InspectionTaskSerializer, InspectionTaskListSerializer,
     InspectionMediaSerializer,
     DefectSerializer, DefectListSerializer,
@@ -57,7 +58,15 @@ class FlightRouteViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list':
             return FlightRouteListSerializer
+        elif self.action == 'retrieve':
+            return FlightRouteDetailSerializer
         return FlightRouteSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action == 'options_for_task':
+            return qs.filter(status='approved')
+        return qs
 
     def perform_create(self, serializer):
         if self.request.user.role not in ['admin', 'superadmin']:
@@ -72,7 +81,101 @@ class FlightRouteViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if self.request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied('只有调度管理员可以删除航线')
+        if instance.tasks.exists():
+            raise PermissionDenied('该航线已关联任务，无法删除')
         instance.delete()
+
+    @action(detail=True, methods=['post'])
+    def submit_review(self, request, pk=None):
+        route = self.get_object()
+        if request.user.role not in ['admin', 'superadmin']:
+            raise PermissionDenied('只有调度管理员可以提交审核')
+        if route.status not in ['draft', 'rejected']:
+            return Response({'error': '当前状态不能提交审核'}, status=status.HTTP_400_BAD_REQUEST)
+        if route.waypoint_count < 2:
+            return Response({'error': '至少需要2个航点才能提交审核'}, status=status.HTTP_400_BAD_REQUEST)
+        route.status = 'pending_review'
+        route.save()
+        serializer = self.get_serializer(route)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        route = self.get_object()
+        if request.user.role not in ['admin', 'superadmin']:
+            raise PermissionDenied('只有调度管理员可以审核')
+        if route.status != 'pending_review':
+            return Response({'error': '当前状态不能审核'}, status=status.HTTP_400_BAD_REQUEST)
+        review_note = request.data.get('review_note', '')
+        route.status = 'approved'
+        route.review_note = review_note
+        route.reviewed_by = request.user
+        route.reviewed_at = timezone.now()
+        route.save()
+        route.create_version_snapshot()
+        serializer = self.get_serializer(route)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        route = self.get_object()
+        if request.user.role not in ['admin', 'superadmin']:
+            raise PermissionDenied('只有调度管理员可以审核')
+        if route.status != 'pending_review':
+            return Response({'error': '当前状态不能审核'}, status=status.HTTP_400_BAD_REQUEST)
+        review_note = request.data.get('review_note', '')
+        if not review_note:
+            return Response({'error': '请填写驳回原因'}, status=status.HTTP_400_BAD_REQUEST)
+        route.status = 'rejected'
+        route.review_note = review_note
+        route.reviewed_by = request.user
+        route.reviewed_at = timezone.now()
+        route.save()
+        serializer = self.get_serializer(route)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def validate(self, request, pk=None):
+        route = self.get_object()
+        altitude_valid = route.validate_altitude()
+        speed_valid = route.validate_speed()
+        distance = route.calculate_distance()
+        duration = route.calculate_duration()
+        towers = route.get_nearby_towers()
+        sections = route.get_affected_sections()
+        return Response({
+            'altitude': altitude_valid,
+            'speed': speed_valid,
+            'distance': distance,
+            'duration': duration,
+            'tower_count': len(towers),
+            'section_count': len(sections),
+            'is_valid': altitude_valid['valid'] and speed_valid['valid'] and distance > 0,
+        })
+
+    @action(detail=True, methods=['get'])
+    def towers_and_sections(self, request, pk=None):
+        route = self.get_object()
+        towers = route.get_nearby_towers()
+        sections = route.get_affected_sections()
+        from lines.serializers import TowerSerializer, SectionSerializer
+        return Response({
+            'towers': TowerSerializer(towers, many=True).data,
+            'sections': SectionSerializer(sections, many=True).data,
+        })
+
+    @action(detail=False, methods=['get'])
+    def options_for_task(self, request):
+        qs = self.get_queryset()
+        serializer = FlightRouteListSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def versions(self, request, pk=None):
+        route = self.get_object()
+        versions = route.versions.all()
+        serializer = FlightRouteVersionSerializer(versions, many=True)
+        return Response(serializer.data)
 
 
 class InspectionTaskViewSet(viewsets.ModelViewSet):

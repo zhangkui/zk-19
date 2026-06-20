@@ -99,6 +99,13 @@ export const routesApi = {
   create: (data: any) => api.post('/flight-routes/', data),
   update: (id: number, data: any) => api.put(`/flight-routes/${id}/`, data),
   delete: (id: number) => api.delete(`/flight-routes/${id}/`),
+  submitReview: (id: number) => api.post(`/flight-routes/${id}/submit_review/`),
+  approve: (id: number, review_note?: string) => api.post(`/flight-routes/${id}/approve/`, { review_note }),
+  reject: (id: number, review_note: string) => api.post(`/flight-routes/${id}/reject/`, { review_note }),
+  validate: (id: number) => api.get(`/flight-routes/${id}/validate/`),
+  getTowersAndSections: (id: number) => api.get(`/flight-routes/${id}/towers_and_sections/`),
+  optionsForTask: () => api.get('/flight-routes/options_for_task/'),
+  getVersions: (id: number) => api.get(`/flight-routes/${id}/versions/`),
 }
 
 export const tasksApi = {

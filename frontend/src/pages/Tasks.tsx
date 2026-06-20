@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { MapContainer, TileLayer, Polyline, CircleMarker, Tooltip, ZoomControl } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { tasksApi, routesApi, dronesApi, authApi } from '../services/api'
-import type { InspectionTask, FlightRoute, Drone, User } from '../types'
+import type { InspectionTask, FlightRoute, Drone, User, RouteNearbyTower, RouteAffectedSection } from '../types'
 import Badge from '../components/Badge'
 import Modal, { FormField, inputClass, selectClass, textareaClass } from '../components/Modal'
 import {
@@ -17,10 +20,24 @@ import {
   CheckCircle,
   Pause,
   XCircle,
+  MapPin,
+  Ruler,
+  Clock3,
+  Mountain,
+  Gauge,
+  Layers,
+  Route,
 } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useAuthStore } from '../store/authStore'
 import { isAdmin, isPilot } from '../utils'
+
+delete (L.Icon.Default.prototype as any)._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+})
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   pending: { label: '待执行', color: 'amber', icon: Clock },
@@ -41,6 +58,12 @@ export default function Tasks() {
   const [statusFilter, setStatusFilter] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [selectedRouteDetail, setSelectedRouteDetail] = useState<{
+    route: FlightRoute | null
+    towers: RouteNearbyTower[]
+    sections: RouteAffectedSection[]
+    loading: boolean
+  }>({ route: null, towers: [], sections: [], loading: false })
   const [form, setForm] = useState({
     name: '',
     route: '' as number | string,
@@ -69,8 +92,8 @@ export default function Tasks() {
       if (searchText) params.search = searchText
       const [tasksRes, routesRes, dronesRes, pilotsRes] = await Promise.all([
         tasksApi.list(params),
-        routesApi.list({ page_size: 50 }),
-        dronesApi.list({ page_size: 50 }),
+        routesApi.optionsForTask(),
+        dronesApi.list({ page_size: 50, status: 'idle' }),
         authApi.getUsers({ role: 'pilot' }),
       ])
       setTasks(tasksRes.data.results || tasksRes.data)
@@ -84,15 +107,40 @@ export default function Tasks() {
     }
   }
 
+  const loadRouteDetail = async (routeId: number) => {
+    setSelectedRouteDetail(prev => ({ ...prev, loading: true }))
+    try {
+      const [routeRes, tsRes] = await Promise.all([
+        routesApi.get(routeId),
+        routesApi.getTowersAndSections(routeId),
+      ])
+      setSelectedRouteDetail({
+        route: routeRes.data,
+        towers: tsRes.data.towers || [],
+        sections: tsRes.data.sections || [],
+        loading: false,
+      })
+    } catch (e) {
+      console.error(e)
+      setSelectedRouteDetail(prev => ({ ...prev, loading: false }))
+    }
+  }
+
   const openCreate = () => {
+    const firstRoute = routes.length > 0 ? routes[0] : null
     setForm({
       name: '',
-      route: routes.length > 0 ? routes[0].id : '',
+      route: firstRoute ? firstRoute.id : '',
       drone: drones.length > 0 ? drones[0].id : '',
       pilot: '',
       planned_date: dayjs().format('YYYY-MM-DD'),
       notes: '',
     })
+    if (firstRoute) {
+      loadRouteDetail(firstRoute.id)
+    } else {
+      setSelectedRouteDetail({ route: null, towers: [], sections: [], loading: false })
+    }
     setModalOpen(true)
   }
 
@@ -312,6 +360,7 @@ export default function Tasks() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title="新建巡检任务"
+        width="max-w-5xl"
         footer={
           <>
             <button
@@ -330,79 +379,256 @@ export default function Tasks() {
           </>
         }
       >
-        <div className="space-y-4">
-          <FormField label="任务名称" required>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="请输入任务名称"
-              className={inputClass}
-            />
-          </FormField>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label="航线">
-              <select
-                value={form.route}
-                onChange={(e) => setForm({ ...form, route: Number(e.target.value) })}
-                className={selectClass}
-              >
-                <option value="">无</option>
-                {routes.map((route) => (
-                  <option key={route.id} value={route.id}>
-                    {route.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="无人机">
-              <select
-                value={form.drone}
-                onChange={(e) => setForm({ ...form, drone: Number(e.target.value) })}
-                className={selectClass}
-              >
-                <option value="">无</option>
-                {drones.map((drone) => (
-                  <option key={drone.id} value={drone.id}>
-                    {drone.name} ({drone.model})
-                  </option>
-                ))}
-              </select>
-            </FormField>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label="飞手">
-              <select
-                value={form.pilot}
-                onChange={(e) => setForm({ ...form, pilot: Number(e.target.value) })}
-                className={selectClass}
-              >
-                <option value="">请选择</option>
-                {pilots.map((pilot) => (
-                  <option key={pilot.id} value={pilot.id}>
-                    {pilot.name} ({pilot.username})
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="计划日期">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left: Form */}
+          <div className="space-y-4">
+            <FormField label="任务名称" required>
               <input
-                type="date"
-                value={form.planned_date}
-                onChange={(e) => setForm({ ...form, planned_date: e.target.value })}
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="请输入任务名称"
                 className={inputClass}
               />
             </FormField>
+            <div className="grid grid-cols-2 gap-4">
+              <FormField label="航线" required>
+                <select
+                  value={form.route}
+                  onChange={(e) => {
+                    const routeId = Number(e.target.value)
+                    setForm({ ...form, route: routeId })
+                    if (routeId) {
+                      loadRouteDetail(routeId)
+                    } else {
+                      setSelectedRouteDetail({ route: null, towers: [], sections: [], loading: false })
+                    }
+                  }}
+                  className={selectClass}
+                >
+                  <option value="">请选择航线</option>
+                  {routes.map((route) => (
+                    <option key={route.id} value={route.id}>
+                      {route.name}
+                    </option>
+                  ))}
+                </select>
+                {routes.length === 0 && (
+                  <p className="text-xs text-warning mt-1">暂无已审核通过的航线，请先在航线管理中创建并审核航线</p>
+                )}
+              </FormField>
+              <FormField label="无人机">
+                <select
+                  value={form.drone}
+                  onChange={(e) => setForm({ ...form, drone: Number(e.target.value) })}
+                  className={selectClass}
+                >
+                  <option value="">无</option>
+                  {drones.map((drone) => (
+                    <option key={drone.id} value={drone.id}>
+                      {drone.name} ({drone.model})
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <FormField label="飞手">
+                <select
+                  value={form.pilot}
+                  onChange={(e) => setForm({ ...form, pilot: Number(e.target.value) })}
+                  className={selectClass}
+                >
+                  <option value="">请选择</option>
+                  {pilots.map((pilot) => (
+                    <option key={pilot.id} value={pilot.id}>
+                      {pilot.name} ({pilot.username})
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="计划日期">
+                <input
+                  type="date"
+                  value={form.planned_date}
+                  onChange={(e) => setForm({ ...form, planned_date: e.target.value })}
+                  className={inputClass}
+                />
+              </FormField>
+            </div>
+            <FormField label="备注">
+              <textarea
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="请输入任务备注"
+                rows={2}
+                className={textareaClass}
+              />
+            </FormField>
+
+            {/* Route Info Summary */}
+            {selectedRouteDetail.route && !selectedRouteDetail.loading && (
+              <div className="bg-bg-card/50 border border-border-dark rounded-lg p-4">
+                <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Route className="w-4 h-4 text-cyan" />
+                  航线参数
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Ruler className="w-4 h-4 text-text-muted" />
+                    <span className="text-text-muted">长度:</span>
+                    <span className="font-medium">{(selectedRouteDetail.route.distance / 1000).toFixed(2)} km</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock3 className="w-4 h-4 text-text-muted" />
+                    <span className="text-text-muted">预计:</span>
+                    <span className="font-medium">{Math.round(selectedRouteDetail.route.estimated_duration / 60)} 分钟</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Mountain className="w-4 h-4 text-text-muted" />
+                    <span className="text-text-muted">高度:</span>
+                    <span className="font-medium">{selectedRouteDetail.route.altitude} m</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Gauge className="w-4 h-4 text-text-muted" />
+                    <span className="text-text-muted">速度:</span>
+                    <span className="font-medium">{selectedRouteDetail.route.speed} m/s</span>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-border-dark grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <MapPin className="w-4 h-4 text-purple-400" />
+                    <span className="text-text-muted">杆塔:</span>
+                    <span className="font-medium text-purple-400">{selectedRouteDetail.towers.length} 基</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Layers className="w-4 h-4 text-purple-400" />
+                    <span className="text-text-muted">区段:</span>
+                    <span className="font-medium text-purple-400">{selectedRouteDetail.sections.length} 个</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-          <FormField label="备注">
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="请输入任务备注"
-              rows={2}
-              className={textareaClass}
-            />
-          </FormField>
+
+          {/* Right: Map Preview */}
+          <div className="space-y-4">
+            <div className="h-80 rounded-lg overflow-hidden border border-border-dark">
+              {selectedRouteDetail.loading ? (
+                <div className="w-full h-full flex items-center justify-center bg-bg-card">
+                  <div className="animate-spin w-6 h-6 border-2 border-cyan border-t-transparent rounded-full" />
+                </div>
+              ) : selectedRouteDetail.route && selectedRouteDetail.route.coordinates.length > 0 ? (
+                <MapContainer
+                  center={selectedRouteDetail.route.coordinates[0] as [number, number]}
+                  zoom={13}
+                  style={{ height: '100%', width: '100%' }}
+                  zoomControl={false}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <ZoomControl position="topright" />
+                  <Polyline
+                    positions={selectedRouteDetail.route.coordinates as [number, number][]}
+                    color="#22D3EE"
+                    weight={3}
+                    opacity={0.8}
+                  />
+                  {selectedRouteDetail.route.coordinates.map((coord, idx) => (
+                    <CircleMarker
+                      key={idx}
+                      center={coord as [number, number]}
+                      radius={6}
+                      fillColor={idx === 0 ? '#22C55E' : idx === selectedRouteDetail.route.coordinates.length - 1 ? '#EF4444' : '#F5B301'}
+                      color={idx === 0 ? '#22C55E' : idx === selectedRouteDetail.route.coordinates.length - 1 ? '#EF4444' : '#F5B301'}
+                      weight={2}
+                      fillOpacity={0.8}
+                    >
+                      <Tooltip direction="top" offset={[0, -8]}>
+                        <div className="text-xs">
+                          <p className="font-medium">航点 #{idx + 1}</p>
+                          <p className="text-text-muted">经度: {coord[1].toFixed(6)}</p>
+                          <p className="text-text-muted">纬度: {coord[0].toFixed(6)}</p>
+                        </div>
+                      </Tooltip>
+                    </CircleMarker>
+                  ))}
+                  {selectedRouteDetail.towers.map((tower) => tower.coordinates && (
+                    <CircleMarker
+                      key={`tower-${tower.id}`}
+                      center={[tower.coordinates.lat, tower.coordinates.lon]}
+                      radius={5}
+                      fillColor="#A855F7"
+                      color="#A855F7"
+                      weight={2}
+                      fillOpacity={0.9}
+                    >
+                      <Tooltip direction="top" offset={[0, -8]}>
+                        <div className="text-xs">
+                          <p className="font-medium text-purple-400">杆塔: {tower.code}</p>
+                          <p className="text-text-muted">高度: {tower.height}m</p>
+                          <p className="text-text-muted">类型: {tower.tower_type_display}</p>
+                        </div>
+                      </Tooltip>
+                    </CircleMarker>
+                  ))}
+                </MapContainer>
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-bg-card text-text-muted">
+                  <Route className="w-12 h-12 mb-2 opacity-30" />
+                  <p className="text-sm">请选择航线查看覆盖范围</p>
+                </div>
+              )}
+            </div>
+
+            {/* Towers and Sections */}
+            {selectedRouteDetail.route && !selectedRouteDetail.loading && (
+              <div className="grid grid-cols-2 gap-4">
+                {/* Towers */}
+                <div className="bg-bg-card/50 border border-border-dark rounded-lg p-3">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-purple-400" />
+                    覆盖杆塔
+                    <Badge variant="purple" size="sm">{selectedRouteDetail.towers.length}</Badge>
+                  </h4>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {selectedRouteDetail.towers.length > 0 ? (
+                      selectedRouteDetail.towers.map((tower) => (
+                        <div key={tower.id} className="text-xs px-2 py-1.5 bg-bg-dark/50 rounded flex items-center justify-between">
+                          <span className="font-mono">{tower.code}</span>
+                          <span className="text-text-muted">#{tower.sequence}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-text-muted text-center py-2">暂无杆塔</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sections */}
+                <div className="bg-bg-card/50 border border-border-dark rounded-lg p-3">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-purple-400" />
+                    覆盖区段
+                    <Badge variant="purple" size="sm">{selectedRouteDetail.sections.length}</Badge>
+                  </h4>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {selectedRouteDetail.sections.length > 0 ? (
+                      selectedRouteDetail.sections.map((section) => (
+                        <div key={section.id} className="text-xs px-2 py-1.5 bg-bg-dark/50 rounded">
+                          <span>{section.name}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-text-muted text-center py-2">暂无区段</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
     </div>
