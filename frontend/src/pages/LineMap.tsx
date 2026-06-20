@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
-import { linesApi, towersApi, sectionsApi } from '../services/api'
-import type { Line, Tower, Section } from '../types'
+import { useState, useEffect, useRef } from 'react'
+import { linesApi, towersApi, sectionsApi, changeHistoryApi } from '../services/api'
+import type { Line, Tower, Section, ChangeHistory as ChangeHistoryType } from '../types'
+import type { MapPoint } from '../components/MapComponent'
 import MapComponent from '../components/MapComponent'
 import Badge from '../components/Badge'
 import Modal, { FormField, inputClass, selectClass, textareaClass } from '../components/Modal'
@@ -12,10 +13,20 @@ import {
   Edit,
   Trash2,
   Layers,
+  MapPin,
+  Upload,
+  Download,
+  History,
+  Scissors,
+  Magnet,
+  CheckCircle,
+  AlertCircle,
+  FileText,
 } from 'lucide-react'
 import { Polyline, CircleMarker, Tooltip } from 'react-leaflet'
 import { useAuthStore } from '../store/authStore'
 import { isAdmin } from '../utils'
+import dayjs from 'dayjs'
 
 const VOLTAGE_OPTIONS = [
   { value: '110kV', label: '110kV' },
@@ -43,17 +54,45 @@ const SECTION_COLORS = [
   '#84CC16',
 ]
 
+function isValidLon(v: string | number): boolean {
+  if (v === '' || v === null || v === undefined) return true
+  const n = Number(v)
+  return !isNaN(n) && n >= -180 && n <= 180
+}
+
+function isValidLat(v: string | number): boolean {
+  if (v === '' || v === null || v === undefined) return true
+  const n = Number(v)
+  return !isNaN(n) && n >= -90 && n <= 90
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export default function LineMap() {
   const { user } = useAuthStore()
   const [lines, setLines] = useState<Line[]>([])
   const [towers, setTowers] = useState<Tower[]>([])
   const [sections, setSections] = useState<Section[]>([])
+  const [history, setHistory] = useState<ChangeHistoryType[]>([])
   const [selectedLine, setSelectedLine] = useState<Line | null>(null)
   const [selectedTower, setSelectedTower] = useState<Tower | null>(null)
   const [loading, setLoading] = useState(true)
-  const [sidebarTab, setSidebarTab] = useState<'lines' | 'towers' | 'sections'>('lines')
+  const [sidebarTab, setSidebarTab] = useState<'lines' | 'towers' | 'sections' | 'history'>('lines')
   const [submitting, setSubmitting] = useState(false)
   const [showSections, setShowSections] = useState(true)
+  const [enableSnap, setEnableSnap] = useState(true)
+
+  const [pickMode, setPickMode] = useState<null | 'line' | 'tower'>(null)
+  const [tempPoints, setTempPoints] = useState<MapPoint[]>([])
 
   const [lineModalOpen, setLineModalOpen] = useState(false)
   const [editingLine, setEditingLine] = useState<Line | null>(null)
@@ -61,6 +100,17 @@ export default function LineMap() {
   const [editingTower, setEditingTower] = useState<Tower | null>(null)
   const [sectionModalOpen, setSectionModalOpen] = useState(false)
   const [editingSection, setEditingSection] = useState<Section | null>(null)
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [splitModalOpen, setSplitModalOpen] = useState(false)
+  const [splitSections, setSplitSections] = useState<{ name: string; start_km: string; end_km: string }[]>([
+    { name: '', start_km: '0', end_km: '2' },
+  ])
+
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importLineId, setImportLineId] = useState<string>('')
+  const [importResult, setImportResult] = useState<{ created: number; errors: string[] } | null>(null)
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [lineForm, setLineForm] = useState({
     name: '',
@@ -68,6 +118,8 @@ export default function LineMap() {
     description: '',
     waypoints: '',
   })
+  const [lineFormErrors, setLineFormErrors] = useState<{ waypoints?: string }>({})
+
   const [towerForm, setTowerForm] = useState({
     line: '' as number | string,
     section: '' as number | string,
@@ -78,6 +130,8 @@ export default function LineMap() {
     lon: '' as number | string,
     lat: '' as number | string,
   })
+  const [towerFormErrors, setTowerFormErrors] = useState<{ lon?: string; lat?: string }>({})
+
   const [sectionForm, setSectionForm] = useState({
     line: '' as number | string,
     name: '',
@@ -96,6 +150,7 @@ export default function LineMap() {
 
   useEffect(() => {
     loadLines()
+    loadHistory()
   }, [])
 
   const loadLines = async () => {
@@ -133,6 +188,15 @@ export default function LineMap() {
     }
   }
 
+  const loadHistory = async () => {
+    try {
+      const res = await changeHistoryApi.list({ page_size: 50, ordering: '-created_at' })
+      setHistory(res.data.results || res.data)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const handleSelectLine = (line: Line) => {
     setSelectedLine(line)
     setSelectedTower(null)
@@ -140,9 +204,24 @@ export default function LineMap() {
     loadSections(line.id)
   }
 
+  const parseWaypointsText = (text: string): [number, number][] => {
+    return text
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [lon, lat] = l.split(',').map((v) => parseFloat(v.trim()))
+        return [lon, lat] as [number, number]
+      })
+      .filter((wp) => !isNaN(wp[0]) && !isNaN(wp[1]))
+  }
+
   const openCreateLine = () => {
     setEditingLine(null)
     setLineForm({ name: '', voltage: '220kV', description: '', waypoints: '' })
+    setLineFormErrors({})
+    setTempPoints([])
+    setPickMode('line')
     setLineModalOpen(true)
   }
 
@@ -158,23 +237,69 @@ export default function LineMap() {
       description: selectedLine.description || '',
       waypoints: coordsText,
     })
+    setTempPoints(
+      (selectedLine.coordinates || []).map((c, idx) => ({
+        lon: c[0],
+        lat: c[1],
+        label: `#${idx + 1}`,
+      }))
+    )
+    setLineFormErrors({})
+    setPickMode('line')
     setLineModalOpen(true)
+  }
+
+  const handleLinePickPoint = (lat: number, lon: number) => {
+    const newPt: MapPoint = { lon, lat, label: `#${tempPoints.length + 1}` }
+    const newPts = [...tempPoints, newPt]
+    setTempPoints(newPts)
+    setLineForm({
+      ...lineForm,
+      waypoints: newPts.map((p) => `${p.lon},${p.lat}`).join('\n'),
+    })
+  }
+
+  const handleTowerPickPoint = (lat: number, lon: number) => {
+    const newPts = [{ lon, lat, label: '杆塔位置' }]
+    setTempPoints(newPts)
+    setTowerForm({
+      ...towerForm,
+      lon: String(Number(lon.toFixed(6))),
+      lat: String(Number(lat.toFixed(6))),
+    })
+    setTowerFormErrors({})
+  }
+
+  const handleClearTempPoints = () => {
+    setTempPoints([])
+    if (pickMode === 'line') {
+      setLineForm({ ...lineForm, waypoints: '' })
+    } else if (pickMode === 'tower') {
+      setTowerForm({ ...towerForm, lon: '', lat: '' })
+    }
+  }
+
+  const closeLineModal = () => {
+    setPickMode(null)
+    setTempPoints([])
+    setLineModalOpen(false)
   }
 
   const handleSaveLine = async () => {
     if (!lineForm.name.trim()) return
+    const waypoints = parseWaypointsText(lineForm.waypoints)
+    if (waypoints.length > 0 && waypoints.length < 2) {
+      setLineFormErrors({ waypoints: '至少需要2个坐标点' })
+      return
+    }
+    for (const wp of waypoints) {
+      if (!isValidLon(wp[0]) || !isValidLat(wp[1])) {
+        setLineFormErrors({ waypoints: '坐标格式或范围不正确（经度-180~180，纬度-90~90）' })
+        return
+      }
+    }
     setSubmitting(true)
     try {
-      const waypoints = lineForm.waypoints
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const [lon, lat] = line.split(',').map((v) => parseFloat(v.trim()))
-          return [lon, lat]
-        })
-        .filter((wp) => !isNaN(wp[0]) && !isNaN(wp[1]))
-
       const data: any = {
         name: lineForm.name,
         voltage: lineForm.voltage,
@@ -183,14 +308,16 @@ export default function LineMap() {
       if (waypoints.length >= 2) {
         data.waypoints = waypoints
       }
-
       if (editingLine) {
         await linesApi.update(editingLine.id, data)
       } else {
         await linesApi.create(data)
       }
+      setPickMode(null)
+      setTempPoints([])
       setLineModalOpen(false)
       await loadLines()
+      await loadHistory()
     } catch (e) {
       console.error(e)
     } finally {
@@ -210,6 +337,9 @@ export default function LineMap() {
       lon: '',
       lat: '',
     })
+    setTowerFormErrors({})
+    setTempPoints([])
+    setPickMode('tower')
     setTowerModalOpen(true)
   }
 
@@ -225,7 +355,20 @@ export default function LineMap() {
       lon: tower.coordinates?.lon ?? '',
       lat: tower.coordinates?.lat ?? '',
     })
+    setTempPoints(
+      tower.coordinates
+        ? [{ lon: tower.coordinates.lon, lat: tower.coordinates.lat, label: tower.code }]
+        : []
+    )
+    setTowerFormErrors({})
+    setPickMode('tower')
     setTowerModalOpen(true)
+  }
+
+  const closeTowerModal = () => {
+    setPickMode(null)
+    setTempPoints([])
+    setTowerModalOpen(false)
   }
 
   const handleDeleteTower = async (tower: Tower) => {
@@ -235,6 +378,7 @@ export default function LineMap() {
       if (selectedLine) {
         await loadTowers(selectedLine.id)
         await loadLines()
+        await loadHistory()
       }
     } catch (e) {
       console.error(e)
@@ -244,12 +388,24 @@ export default function LineMap() {
 
   const handleSaveTower = async () => {
     if (!towerForm.line || !towerForm.code.trim()) return
+    const errors: { lon?: string; lat?: string } = {}
+    if (towerForm.lon !== '' && !isValidLon(towerForm.lon)) {
+      errors.lon = '经度范围必须在-180到180之间'
+    }
+    if (towerForm.lat !== '' && !isValidLat(towerForm.lat)) {
+      errors.lat = '纬度范围必须在-90到90之间'
+    }
+    if (Object.keys(errors).length > 0) {
+      setTowerFormErrors(errors)
+      return
+    }
     setSubmitting(true)
     try {
       const data: any = {
         line: Number(towerForm.line),
         code: towerForm.code,
         tower_type: towerForm.tower_type,
+        snapped: enableSnap,
       }
       if (towerForm.section) data.section = Number(towerForm.section)
       if (towerForm.height !== '') data.height = Number(towerForm.height)
@@ -263,11 +419,19 @@ export default function LineMap() {
       } else {
         await towersApi.create(data)
       }
+      setPickMode(null)
+      setTempPoints([])
       setTowerModalOpen(false)
       await loadTowers(Number(towerForm.line))
       await loadLines()
-    } catch (e) {
+      await loadHistory()
+    } catch (e: any) {
       console.error(e)
+      if (e.response?.data) {
+        const resp = e.response.data
+        if (resp.lon) setTowerFormErrors({ ...errors, lon: resp.lon[0] })
+        if (resp.lat) setTowerFormErrors({ ...errors, lat: resp.lat[0] })
+      }
     } finally {
       setSubmitting(false)
     }
@@ -303,6 +467,7 @@ export default function LineMap() {
       await sectionsApi.delete(section.id)
       if (selectedLine) {
         await loadSections(selectedLine.id)
+        await loadHistory()
       }
     } catch (e) {
       console.error(e)
@@ -328,6 +493,7 @@ export default function LineMap() {
       }
       setSectionModalOpen(false)
       await loadSections(Number(sectionForm.line))
+      await loadHistory()
     } catch (e) {
       console.error(e)
     } finally {
@@ -345,9 +511,81 @@ export default function LineMap() {
         setSections([])
       }
       await loadLines()
+      await loadHistory()
     } catch (e) {
       console.error(e)
       alert('删除失败')
+    }
+  }
+
+  const handleExport = async (type: 'lines' | 'towers' | 'sections') => {
+    try {
+      let res: any
+      if (type === 'lines') {
+        res = await linesApi.export()
+      } else if (type === 'towers') {
+        res = await towersApi.export(selectedLine?.id)
+      } else {
+        res = await sectionsApi.export()
+      }
+      const filename = `${type}_${dayjs().format('YYYYMMDD_HHmmss')}.csv`
+      downloadBlob(new Blob([res.data]), filename)
+    } catch (e) {
+      console.error(e)
+      alert('导出失败')
+    }
+  }
+
+  const handleImportFile = async () => {
+    if (!importFile || !importLineId) {
+      alert('请选择文件和线路')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', importFile)
+      formData.append('line_id', importLineId)
+      const res = await towersApi.importCsv(formData)
+      setImportResult(res.data)
+      await loadTowers(Number(importLineId))
+      await loadLines()
+      await loadHistory()
+    } catch (e: any) {
+      console.error(e)
+      alert(e.response?.data?.error || '导入失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleSplitSections = async () => {
+    if (!selectedLine) return
+    const valid = splitSections.filter((s) => s.name.trim() && s.start_km !== '' && s.end_km !== '')
+    if (valid.length === 0) {
+      alert('请至少填写一个有效的区段')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await linesApi.splitSections(selectedLine.id, {
+        sections: valid.map((s) => ({
+          name: s.name,
+          start_km: Number(s.start_km),
+          end_km: Number(s.end_km),
+        })),
+        auto_assign: true,
+      })
+      setSplitModalOpen(false)
+      setSplitSections([{ name: '', start_km: '0', end_km: '2' }])
+      await loadSections(selectedLine.id)
+      await loadTowers(selectedLine.id)
+      await loadHistory()
+    } catch (e: any) {
+      console.error(e)
+      alert(e.response?.data?.error || '切分失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -359,17 +597,23 @@ export default function LineMap() {
     '1000kV': '#3DD68C',
   }
 
+  const actionColorMap: Record<string, string> = {
+    create: 'success',
+    update: 'cyan',
+    delete: 'danger',
+    import: 'warning',
+  }
+
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold">线路地图建模</h2>
           <p className="text-text-muted text-sm mt-1">
             线路 — 区段 — 杆塔空间建模与管理
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowSections(!showSections)}
             className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors text-sm ${
@@ -381,8 +625,21 @@ export default function LineMap() {
             <Layers className="w-4 h-4" />
             区段显示
           </button>
+          <button
+            onClick={() => setEnableSnap(!enableSnap)}
+            className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors text-sm ${
+              enableSnap
+                ? 'border-cyan/40 text-cyan bg-cyan/10'
+                : 'border-border-dark text-text-secondary hover:text-text-primary hover:bg-white/5'
+            }`}
+            title="新增杆塔时自动吸附到线路附近（50米范围内）"
+          >
+            <Magnet className="w-4 h-4" />
+            自动吸附
+          </button>
           {canManage && (
             <>
+              <div className="h-6 w-px bg-border-dark mx-1"></div>
               <button
                 onClick={openCreateLine}
                 className="flex items-center gap-2 px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm"
@@ -414,49 +671,88 @@ export default function LineMap() {
                 <Plus className="w-4 h-4" />
                 新增区段
               </button>
+              <button
+                onClick={() => {
+                  setImportLineId(selectedLine?.id ? String(selectedLine.id) : '')
+                  setImportFile(null)
+                  setImportResult(null)
+                  setImportModalOpen(true)
+                }}
+                disabled={!selectedLine}
+                className="flex items-center gap-2 px-4 py-2 border border-border-dark text-text-secondary hover:text-text-primary hover:bg-white/5 font-medium rounded-lg transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Upload className="w-4 h-4" />
+                导入杆塔
+              </button>
+              <button
+                onClick={() => {
+                  setSplitSections([{ name: '', start_km: '0', end_km: '2' }])
+                  setSplitModalOpen(true)
+                }}
+                disabled={!selectedLine}
+                className="flex items-center gap-2 px-4 py-2 border border-border-dark text-text-secondary hover:text-text-primary hover:bg-white/5 font-medium rounded-lg transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Scissors className="w-4 h-4" />
+                切分区段
+              </button>
+              <div className="h-6 w-px bg-border-dark mx-1"></div>
+              <button
+                onClick={() => handleExport('lines')}
+                className="flex items-center gap-2 px-3 py-2 border border-border-dark text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-lg transition-colors text-sm"
+                title="导出线路CSV"
+              >
+                <Download className="w-4 h-4" />
+                线路
+              </button>
+              <button
+                onClick={() => handleExport('towers')}
+                disabled={!selectedLine}
+                className="flex items-center gap-2 px-3 py-2 border border-border-dark text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-lg transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                title="导出杆塔CSV"
+              >
+                <Download className="w-4 h-4" />
+                杆塔
+              </button>
+              <button
+                onClick={() => handleExport('sections')}
+                className="flex items-center gap-2 px-3 py-2 border border-border-dark text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-lg transition-colors text-sm"
+                title="导出区段CSV"
+              >
+                <Download className="w-4 h-4" />
+                区段
+              </button>
             </>
           )}
         </div>
       </div>
 
       <div className="flex gap-4 h-[calc(100vh-13rem)]">
-        {/* Sidebar */}
         <div className="w-80 bg-bg-panel border border-border-dark rounded-xl overflow-hidden flex flex-col">
-          {/* Tabs */}
           <div className="flex border-b border-border-dark">
-            <button
-              onClick={() => setSidebarTab('lines')}
-              className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                sidebarTab === 'lines'
-                  ? 'text-cyan border-b-2 border-cyan bg-cyan/5'
-                  : 'text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              线路列表
-            </button>
-            <button
-              onClick={() => setSidebarTab('towers')}
-              className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                sidebarTab === 'towers'
-                  ? 'text-cyan border-b-2 border-cyan bg-cyan/5'
-                  : 'text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              杆塔列表
-            </button>
-            <button
-              onClick={() => setSidebarTab('sections')}
-              className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                sidebarTab === 'sections'
-                  ? 'text-cyan border-b-2 border-cyan bg-cyan/5'
-                  : 'text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              区段列表
-            </button>
+            {[
+              { key: 'lines', label: '线路', icon: Map },
+              { key: 'towers', label: '杆塔', icon: TowerIcon },
+              { key: 'sections', label: '区段', icon: Layers },
+              { key: 'history', label: '历史', icon: History },
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => {
+                  setSidebarTab(key as any)
+                  if (key === 'history') loadHistory()
+                }}
+                className={`flex-1 py-3 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
+                  sidebarTab === key
+                    ? 'text-cyan border-b-2 border-cyan bg-cyan/5'
+                    : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Content */}
           <div className="flex-1 overflow-y-auto">
             {sidebarTab === 'lines' ? (
               <div className="divide-y divide-border-dark">
@@ -558,6 +854,11 @@ export default function LineMap() {
                     </div>
                     <div className="text-xs text-text-muted">
                       {tower.tower_type_display} · {tower.height}m
+                      {tower.section_name && (
+                        <span className="ml-2" style={{ color: getSectionColor(tower.section) }}>
+                          [{tower.section_name}]
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -568,7 +869,7 @@ export default function LineMap() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : sidebarTab === 'sections' ? (
               <div className="divide-y divide-border-dark">
                 {sections.map((section) => {
                   const color = getSectionColor(section.id)
@@ -619,14 +920,40 @@ export default function LineMap() {
                 {sections.length === 0 && (
                   <div className="p-8 text-center text-text-muted text-sm">
                     <Layers className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                    暂无区段，点击"新增区段"创建
+                    暂无区段，点击"新增区段"或"切分区段"创建
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y divide-border-dark">
+                {history.map((h) => (
+                  <div key={h.id} className="p-3 hover:bg-white/5 transition-colors">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium truncate">{h.object_name}</span>
+                      <Badge variant={actionColorMap[h.action] as any} size="sm">
+                        {h.action_display}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-text-muted flex items-center gap-2">
+                      <span className="text-text-secondary">{h.content_type_display}</span>
+                      <span>·</span>
+                      <span>{h.user_name || '系统'}</span>
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                      {dayjs(h.created_at).format('MM-DD HH:mm')}
+                    </div>
+                  </div>
+                ))}
+                {history.length === 0 && (
+                  <div className="p-8 text-center text-text-muted text-sm">
+                    <History className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                    暂无修改历史
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Selected info panel */}
           {selectedTower && (
             <div className="border-t border-border-dark p-4 bg-bg-card">
               <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
@@ -650,6 +977,14 @@ export default function LineMap() {
                   <span className="text-text-muted">序号</span>
                   <span>#{selectedTower.sequence}</span>
                 </div>
+                {selectedTower.section_name && (
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">区段</span>
+                    <span style={{ color: getSectionColor(selectedTower.section) }}>
+                      {selectedTower.section_name}
+                    </span>
+                  </div>
+                )}
                 {selectedTower.coordinates && (
                   <div className="flex justify-between">
                     <span className="text-text-muted">坐标</span>
@@ -664,14 +999,18 @@ export default function LineMap() {
           )}
         </div>
 
-        {/* Map */}
         <div className="flex-1 bg-bg-panel border border-border-dark rounded-xl overflow-hidden">
           <div className="h-full relative">
             <MapComponent
               center={selectedLine?.coordinates?.[0] ? [selectedLine.coordinates[0][1], selectedLine.coordinates[0][0]] : [39.91, 116.47]}
               zoom={12}
+              pickMode={!!pickMode}
+              pickModeType={pickMode === 'line' ? 'multi' : 'single'}
+              onPickPoint={pickMode === 'line' ? handleLinePickPoint : handleTowerPickPoint}
+              tempPoints={tempPoints}
+              onClearTempPoints={handleClearTempPoints}
             >
-              {lines.map((line) => (
+              {lines.map((line) =>
                 line.coordinates && line.coordinates.length > 0 && (
                   <Polyline
                     key={line.id}
@@ -693,7 +1032,7 @@ export default function LineMap() {
                     </Tooltip>
                   </Polyline>
                 )
-              ))}
+              )}
               {showSections && sections.map((section) => {
                 const sectionTowers = towers.filter((t) => t.section === section.id && t.coordinates)
                 if (sectionTowers.length < 2) return null
@@ -707,9 +1046,6 @@ export default function LineMap() {
                     color={color}
                     weight={8}
                     opacity={0.35}
-                    eventHandlers={{
-                      click: () => {},
-                    }}
                   >
                     <Tooltip direction="top" offset={[0, -10]} opacity={1}>
                       <div className="text-xs">
@@ -751,7 +1087,6 @@ export default function LineMap() {
               )}
             </MapComponent>
 
-            {/* Map legend */}
             <div className="absolute top-4 right-4 bg-bg-panel/90 backdrop-blur border border-border-dark rounded-lg p-3 text-xs space-y-3 max-w-[220px]">
               <div>
                 <p className="font-medium mb-2">电压等级</p>
@@ -790,15 +1125,15 @@ export default function LineMap() {
         </div>
       </div>
 
-      {/* Line Form Modal */}
       <Modal
         open={lineModalOpen}
-        onClose={() => setLineModalOpen(false)}
+        onClose={closeLineModal}
         title={editingLine ? '编辑线路' : '新增线路'}
+        width="max-w-2xl"
         footer={
           <>
             <button
-              onClick={() => setLineModalOpen(false)}
+              onClick={closeLineModal}
               className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
             >
               取消
@@ -814,36 +1149,64 @@ export default function LineMap() {
         }
       >
         <div className="space-y-4">
-          <FormField label="线路名称" required>
-            <input
-              type="text"
-              value={lineForm.name}
-              onChange={(e) => setLineForm({ ...lineForm, name: e.target.value })}
-              placeholder="请输入线路名称"
-              className={inputClass}
-            />
-          </FormField>
-          <FormField label="电压等级" required>
-            <select
-              value={lineForm.voltage}
-              onChange={(e) => setLineForm({ ...lineForm, voltage: e.target.value })}
-              className={selectClass}
-            >
-              {VOLTAGE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="线路坐标（经度,纬度 每行一个点，至少2个点）">
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="线路名称" required>
+              <input
+                type="text"
+                value={lineForm.name}
+                onChange={(e) => setLineForm({ ...lineForm, name: e.target.value })}
+                placeholder="请输入线路名称"
+                className={inputClass}
+              />
+            </FormField>
+            <FormField label="电压等级" required>
+              <select
+                value={lineForm.voltage}
+                onChange={(e) => setLineForm({ ...lineForm, voltage: e.target.value })}
+                className={selectClass}
+              >
+                {VOLTAGE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </div>
+          <div className="bg-bg-card border border-border-dark rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-amber" />
+                地图选点
+              </p>
+              <span className="text-xs text-text-muted">
+                已选 <span className="text-amber font-medium">{tempPoints.length}</span> 个点
+              </span>
+            </div>
+            <p className="text-xs text-text-muted">
+              打开弹窗后在右侧地图上点击选择坐标点，至少需要2个点。可在下方手动调整坐标。
+            </p>
+          </div>
+          <FormField
+            label={`线路坐标（经度,纬度 每行一个点，至少2个点）${tempPoints.length > 0 ? ` · 已选 ${tempPoints.length} 个点` : ''}`}
+          >
             <textarea
               value={lineForm.waypoints}
-              onChange={(e) => setLineForm({ ...lineForm, waypoints: e.target.value })}
+              onChange={(e) => {
+                setLineForm({ ...lineForm, waypoints: e.target.value })
+                const wps = parseWaypointsText(e.target.value)
+                setTempPoints(wps.map((c, idx) => ({ lon: c[0], lat: c[1], label: `#${idx + 1}` })))
+              }}
               placeholder={'116.47,39.91\n116.48,39.92\n116.49,39.93'}
               rows={5}
               className={textareaClass}
             />
+            {lineFormErrors.waypoints && (
+              <p className="text-xs text-danger mt-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {lineFormErrors.waypoints}
+              </p>
+            )}
           </FormField>
           <FormField label="描述">
             <textarea
@@ -857,15 +1220,15 @@ export default function LineMap() {
         </div>
       </Modal>
 
-      {/* Tower Form Modal */}
       <Modal
         open={towerModalOpen}
-        onClose={() => setTowerModalOpen(false)}
+        onClose={closeTowerModal}
         title={editingTower ? '编辑杆塔' : '新增杆塔'}
+        width="max-w-2xl"
         footer={
           <>
             <button
-              onClick={() => setTowerModalOpen(false)}
+              onClick={closeTowerModal}
               className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
             >
               取消
@@ -906,7 +1269,7 @@ export default function LineMap() {
                 onChange={(e) => setTowerForm({ ...towerForm, section: e.target.value })}
                 className={selectClass}
               >
-                <option value="">无</option>
+                <option value="">自动分配</option>
                 {sections.map((section) => (
                   <option key={section.id} value={section.id}>
                     {section.name}
@@ -958,34 +1321,92 @@ export default function LineMap() {
                 className={inputClass}
               />
             </FormField>
-            <div></div>
+            <FormField label="自动吸附">
+              <div className="flex items-center h-[42px]">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableSnap}
+                    onChange={(e) => setEnableSnap(e.target.checked)}
+                    className="w-4 h-4 rounded border-border-dark bg-bg-card text-cyan focus:ring-cyan/50"
+                  />
+                  <span className="text-sm text-text-secondary">50米内吸附</span>
+                </label>
+              </div>
+            </FormField>
+          </div>
+          <div className="bg-bg-card border border-border-dark rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-amber" />
+                地图点选坐标
+              </p>
+              {tempPoints.length > 0 && (
+                <Badge variant="success" size="sm">
+                  <CheckCircle className="w-3 h-3 inline mr-1" />
+                  已选点
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-text-muted">
+              在右侧地图上点击选择杆塔位置，也可在下方手动输入经纬度。
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="经度">
               <input
                 type="number"
-                step="0.0001"
+                step="0.000001"
                 value={towerForm.lon}
-                onChange={(e) => setTowerForm({ ...towerForm, lon: e.target.value })}
-                placeholder="如：116.4700"
-                className={inputClass}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setTowerForm({ ...towerForm, lon: v })
+                  if (v !== '' && towerForm.lat !== '') {
+                    const lon = Number(v)
+                    const lat = Number(towerForm.lat)
+                    if (!isNaN(lon) && !isNaN(lat)) {
+                      setTempPoints([{ lon, lat, label: '杆塔位置' }])
+                    }
+                  } else {
+                    setTempPoints([])
+                  }
+                }}
+                placeholder="经度：-180 ~ 180，如 116.4700"
+                className={`${inputClass} ${towerFormErrors.lon ? 'border-danger/50 focus:border-danger/50' : ''}`}
               />
+              {towerFormErrors.lon && (
+                <p className="text-xs text-danger mt-1">{towerFormErrors.lon}</p>
+              )}
             </FormField>
             <FormField label="纬度">
               <input
                 type="number"
-                step="0.0001"
+                step="0.000001"
                 value={towerForm.lat}
-                onChange={(e) => setTowerForm({ ...towerForm, lat: e.target.value })}
-                placeholder="如：39.9100"
-                className={inputClass}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setTowerForm({ ...towerForm, lat: v })
+                  if (v !== '' && towerForm.lon !== '') {
+                    const lat = Number(v)
+                    const lon = Number(towerForm.lon)
+                    if (!isNaN(lon) && !isNaN(lat)) {
+                      setTempPoints([{ lon, lat, label: '杆塔位置' }])
+                    }
+                  } else {
+                    setTempPoints([])
+                  }
+                }}
+                placeholder="纬度：-90 ~ 90，如 39.9100"
+                className={`${inputClass} ${towerFormErrors.lat ? 'border-danger/50 focus:border-danger/50' : ''}`}
               />
+              {towerFormErrors.lat && (
+                <p className="text-xs text-danger mt-1">{towerFormErrors.lat}</p>
+              )}
             </FormField>
           </div>
         </div>
       </Modal>
 
-      {/* Section Form Modal */}
       <Modal
         open={sectionModalOpen}
         onClose={() => setSectionModalOpen(false)}
@@ -1065,6 +1486,226 @@ export default function LineMap() {
           </FormField>
         </div>
       </Modal>
+
+      <Modal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        title="杆塔坐标批量导入"
+        footer={
+          <>
+            <button
+              onClick={() => setImportModalOpen(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
+            >
+              关闭
+            </button>
+            <button
+              onClick={handleImportFile}
+              disabled={submitting || !importFile || !importLineId}
+              className="px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm disabled:opacity-50"
+            >
+              {submitting ? '导入中...' : '开始导入'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <FormField label="目标线路" required>
+            <select
+              value={importLineId}
+              onChange={(e) => setImportLineId(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">请选择线路</option>
+              {lines.map((line) => (
+                <option key={line.id} value={line.id}>
+                  {line.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="CSV文件" required>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                importFile
+                  ? 'border-success/50 bg-success/5'
+                  : 'border-border-dark hover:border-cyan/50 hover:bg-cyan/5'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => {
+                  setImportFile(e.target.files?.[0] || null)
+                  setImportResult(null)
+                }}
+              />
+              {importFile ? (
+                <div>
+                  <FileText className="w-8 h-8 mx-auto mb-2 text-success" />
+                  <p className="text-sm font-medium">{importFile.name}</p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {(importFile.size / 1024).toFixed(1)} KB · 点击重新选择
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <Upload className="w-8 h-8 mx-auto mb-2 text-text-muted" />
+                  <p className="text-sm font-medium">点击选择CSV文件</p>
+                  <p className="text-xs text-text-muted mt-1">
+                    支持 .csv 格式
+                  </p>
+                </div>
+              )}
+            </div>
+          </FormField>
+          <div className="bg-bg-card border border-border-dark rounded-lg p-3 text-xs text-text-muted">
+            <p className="font-medium text-text-secondary mb-2">CSV列名要求（任一即可）：</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li>杆塔编号 / code / 编号</li>
+              <li>经度 / lon / 经度(longitude)</li>
+              <li>纬度 / lat / 纬度(latitude)</li>
+              <li>可选：杆塔类型、高度、序号</li>
+            </ul>
+          </div>
+          {importResult && (
+            <div className={`rounded-lg p-4 ${importResult.errors.length > 0 ? 'bg-warning/10 border border-warning/30' : 'bg-success/10 border border-success/30'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                {importResult.errors.length > 0 ? (
+                  <AlertCircle className="w-5 h-5 text-warning" />
+                ) : (
+                  <CheckCircle className="w-5 h-5 text-success" />
+                )}
+                <span className="font-medium text-sm">
+                  {importResult.message}
+                </span>
+              </div>
+              {importResult.errors.length > 0 && (
+                <div className="text-xs text-text-muted mt-2 max-h-32 overflow-y-auto space-y-1">
+                  {importResult.errors.map((err, i) => (
+                    <p key={i} className="text-warning">· {err}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={splitModalOpen}
+        onClose={() => setSplitModalOpen(false)}
+        title="按线路切分区段"
+        width="max-w-xl"
+        footer={
+          <>
+            <button
+              onClick={() => setSplitModalOpen(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors text-sm"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSplitSections}
+              disabled={submitting}
+              className="px-4 py-2 bg-cyan text-bg-dark font-medium rounded-lg hover:bg-cyan-dark transition-colors text-sm disabled:opacity-50"
+            >
+              {submitting ? '切分中...' : '确认切分'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-bg-card border border-border-dark rounded-lg p-3 text-xs text-text-muted">
+            <p className="font-medium text-text-secondary mb-1">切分说明</p>
+            <p>设置多个区段的公里标范围，切分后杆塔会根据在线路上的投影位置自动关联到对应区段。</p>
+          </div>
+          <div className="space-y-3">
+            {splitSections.map((sec, idx) => (
+              <div key={idx} className="flex items-end gap-3 p-3 bg-bg-card border border-border-dark rounded-lg">
+                <div className="flex-1">
+                  <FormField label={`区段 ${idx + 1} 名称`} required={idx === 0}>
+                    <input
+                      type="text"
+                      value={sec.name}
+                      onChange={(e) => {
+                        const newSections = [...splitSections]
+                        newSections[idx].name = e.target.value
+                        setSplitSections(newSections)
+                      }}
+                      placeholder={`如：第${idx + 1}区段`}
+                      className={inputClass}
+                    />
+                  </FormField>
+                </div>
+                <div className="w-28">
+                  <FormField label="起始km">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={sec.start_km}
+                      onChange={(e) => {
+                        const newSections = [...splitSections]
+                        newSections[idx].start_km = e.target.value
+                        setSplitSections(newSections)
+                      }}
+                      className={inputClass}
+                    />
+                  </FormField>
+                </div>
+                <div className="w-28">
+                  <FormField label="结束km">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={sec.end_km}
+                      onChange={(e) => {
+                        const newSections = [...splitSections]
+                        newSections[idx].end_km = e.target.value
+                        setSplitSections(newSections)
+                      }}
+                      className={inputClass}
+                    />
+                  </FormField>
+                </div>
+                {splitSections.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const newSections = splitSections.filter((_, i) => i !== idx)
+                      setSplitSections(newSections)
+                    }}
+                    className="p-2 text-text-muted hover:text-danger hover:bg-white/5 rounded-lg transition-colors mb-[2px]"
+                    title="删除该区段"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => {
+              const last = splitSections[splitSections.length - 1]
+              setSplitSections([
+                ...splitSections,
+                {
+                  name: '',
+                  start_km: last ? last.end_km : '0',
+                  end_km: last ? String(Number(last.end_km) + 2) : '2',
+                },
+              ])
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-border-dark text-text-muted hover:text-text-primary hover:bg-white/5 rounded-lg transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            添加区段
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }
+

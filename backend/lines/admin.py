@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.gis.admin import GeoModelAdmin, OSMGeoAdmin
-from .models import Line, Section, Tower
+from .models import Line, Section, Tower, ChangeHistory
 
 
 @admin.register(Line)
@@ -28,3 +28,11 @@ class TowerAdmin(OSMGeoAdmin):
     default_lon = 116.397
     default_lat = 39.908
     default_zoom = 10
+
+
+@admin.register(ChangeHistory)
+class ChangeHistoryAdmin(admin.ModelAdmin):
+    list_display = ['content_type', 'action', 'object_name', 'user', 'created_at']
+    list_filter = ['content_type', 'action']
+    search_fields = ['object_name', 'note']
+    readonly_fields = ['created_at']

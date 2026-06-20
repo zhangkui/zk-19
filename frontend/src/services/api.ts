@@ -53,6 +53,8 @@ export const linesApi = {
   create: (data: any) => api.post('/lines/', data),
   update: (id: number, data: any) => api.put(`/lines/${id}/`, data),
   delete: (id: number) => api.delete(`/lines/${id}/`),
+  export: () => api.get('/lines/export/', { responseType: 'blob' }),
+  splitSections: (id: number, data: any) => api.post(`/lines/${id}/split_sections/`, data),
 }
 
 export const towersApi = {
@@ -62,6 +64,10 @@ export const towersApi = {
   update: (id: number, data: any) => api.put(`/towers/${id}/`, data),
   delete: (id: number) => api.delete(`/towers/${id}/`),
   byLine: (lineId: number) => api.get('/towers/by_line/', { params: { line_id: lineId } }),
+  export: (lineId?: number) => api.get('/towers/export/', { params: lineId ? { line_id: lineId } : {}, responseType: 'blob' }),
+  importCsv: (formData: FormData) => api.post('/towers/import_csv/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
 }
 
 export const sectionsApi = {
@@ -70,6 +76,13 @@ export const sectionsApi = {
   create: (data: any) => api.post('/sections/', data),
   update: (id: number, data: any) => api.put(`/sections/${id}/`, data),
   delete: (id: number) => api.delete(`/sections/${id}/`),
+  export: () => api.get('/sections/export/', { responseType: 'blob' }),
+  assignTowers: (id: number, tower_ids: number[]) => api.post(`/sections/${id}/assign_towers/`, { tower_ids }),
+}
+
+export const changeHistoryApi = {
+  list: (params?: any) => api.get('/change-history/', { params }),
+  get: (id: number) => api.get(`/change-history/${id}/`),
 }
 
 export const dronesApi = {

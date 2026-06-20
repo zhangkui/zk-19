@@ -19,6 +19,7 @@ export interface Line {
   description: string
   coordinates: [number, number][]
   created_at: string
+  updated_at?: string
   towers?: Tower[]
 }
 
@@ -38,6 +39,7 @@ export interface Tower {
   id: number
   line: number | null
   section: number | null
+  section_name?: string
   code: string
   height: number
   tower_type: string
@@ -45,6 +47,22 @@ export interface Tower {
   sequence: number
   coordinates: { lon: number; lat: number } | null
   defect_count?: number
+  created_at: string
+  updated_at?: string
+}
+
+export interface ChangeHistory {
+  id: number
+  content_type: 'line' | 'tower' | 'section'
+  content_type_display: string
+  object_id: number | null
+  object_name: string
+  action: 'create' | 'update' | 'delete' | 'import'
+  action_display: string
+  user: number | null
+  user_name: string
+  changes: any
+  note: string
   created_at: string
 }
 
