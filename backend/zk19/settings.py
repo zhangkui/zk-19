@@ -37,7 +37,40 @@ INSTALLED_APPS = [
     'inspection',
     'ops',
     'stats',
+    'drone_mqtt',
 ]
+
+MQTT_BROKER_HOST = env('MQTT_BROKER_HOST', default='localhost')
+MQTT_BROKER_PORT = env.int('MQTT_BROKER_PORT', default=1883)
+MQTT_USERNAME = env('MQTT_USERNAME', default='')
+MQTT_PASSWORD = env('MQTT_PASSWORD', default='')
+MQTT_USE_TLS = env.bool('MQTT_USE_TLS', default=False)
+MQTT_KEEPALIVE = env.int('MQTT_KEEPALIVE', default=60)
+MQTT_LOG_LEVEL = env('MQTT_LOG_LEVEL', default='INFO')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} [{levelname}] {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'drone_mqtt': {
+            'handlers': ['console'],
+            'level': MQTT_LOG_LEVEL,
+            'propagate': False,
+        },
+    },
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -35,6 +35,31 @@ services:
       timeout: 5s
       retries: 5
 
+  emqx:
+    image: emqx/emqx:5.3.0
+    container_name: zk19-emqx
+    environment:
+      EMQX_NAME: zk19-emqx
+      EMQX_HOST: 127.0.0.1
+      EMQX_ALLOW_ANONYMOUS: 'true'
+      EMQX_LOADED_PLUGINS: 'emqx_management,emqx_recon,emqx_retainer,emqx_dashboard'
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${MQTT_USERNAME:-zk19}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${MQTT_PASSWORD:-zk19_pass}
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "8084:8084"
+      - "8883:8883"
+      - "18083:18083"
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    healthcheck:
+      test: ["CMD", "emqx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: ./backend
@@ -51,6 +76,13 @@ services:
       - CELERY_RESULT_BACKEND=rpc://
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - DEBUG=${DEBUG:-True}
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-emqx}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_USE_TLS=${MQTT_USE_TLS:-False}
+      - MQTT_KEEPALIVE=${MQTT_KEEPALIVE:-60}
+      - MQTT_LOG_LEVEL=${MQTT_LOG_LEVEL:-INFO}
     ports:
       - "8000:8000"
     depends_on:
@@ -58,6 +90,31 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      emqx:
+        condition: service_healthy
+
+  mqtt_consumer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zk19-mqtt-consumer
+    command: python manage.py mqtt_consumer
+    volumes:
+      - ./backend:/app
+    environment:
+      - DJANGO_SETTINGS_MODULE=zk19.settings
+      - DATABASE_URL=postgis://${POSTGRES_USER:-zk19}:${POSTGRES_PASSWORD:-zk19_pass}@db:5432/${POSTGRES_DB:-zk19}
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-emqx}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_LOG_LEVEL=${MQTT_LOG_LEVEL:-INFO}
+    depends_on:
+      db:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    restart: unless-stopped
 
   worker:
     build:
@@ -117,4 +174,6 @@ services:
 volumes:
   pgdata:
   rabbitmq_data:
+  emqx_data:
+  emqx_log:
   media_data:

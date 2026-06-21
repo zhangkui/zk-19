@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/', include('inspection.urls')),
     path('api/', include('ops.urls')),
     path('api/stats/', include('stats.urls')),
+    path('api/mqtt/', include('drone_mqtt.urls')),
 ]
 
 if settings.DEBUG:

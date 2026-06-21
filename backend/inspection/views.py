@@ -265,10 +265,23 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
             return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
         if task.status not in ['pending', 'paused']:
             return Response({'error': 'Task cannot be started'}, status=status.HTTP_400_BAD_REQUEST)
+        if not task.drone:
+            return Response({'error': '任务未绑定无人机，请先绑定无人机'}, status=status.HTTP_400_BAD_REQUEST)
         task.status = 'running'
         task.started_at = timezone.now()
         task.save()
-        return Response({'message': 'Task started'})
+
+        mqtt_result = {'success': False, 'message': 'MQTT未启用'}
+        try:
+            from drone_mqtt.task_push import TaskPushService
+            mqtt_result = TaskPushService.push_task_bind(task.id)
+        except Exception as e:
+            mqtt_result = {'success': False, 'message': f'MQTT推送异常: {str(e)}'}
+
+        return Response({
+            'message': 'Task started',
+            'mqtt_push': mqtt_result,
+        })
 
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):

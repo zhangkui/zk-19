@@ -16,13 +16,35 @@ class Drone(models.Model):
         ('offline', '离线'),
     ]
 
+    REPORT_TYPE_CHOICES = [
+        ('heartbeat', '心跳上报'),
+        ('telemetry', '遥测上报'),
+        ('media', '媒体上报'),
+        ('event', '事件上报'),
+        ('task_summary', '任务汇总上报'),
+    ]
+
     name = models.CharField(max_length=100, verbose_name='无人机名称')
     model = models.CharField(max_length=100, verbose_name='型号')
     serial_number = models.CharField(max_length=100, unique=True, verbose_name='序列号')
+    firmware_version = models.CharField(max_length=50, blank=True, default='v1.0.0', verbose_name='固件版本')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='idle', verbose_name='状态')
     battery = models.IntegerField(default=100, verbose_name='电量(%)')
+    signal_strength = models.IntegerField(default=100, verbose_name='信号强度(%)')
+    altitude = models.FloatField(default=0, verbose_name='高度(m)')
+    speed = models.FloatField(default=0, verbose_name='速度(m/s)')
+    heading = models.FloatField(default=0, verbose_name='航向(度)')
+    latitude = models.FloatField(null=True, blank=True, verbose_name='纬度')
+    longitude = models.FloatField(null=True, blank=True, verbose_name='经度')
+    last_heartbeat = models.DateTimeField(null=True, blank=True, verbose_name='最后心跳时间')
+    last_report_time = models.DateTimeField(null=True, blank=True, verbose_name='最后上报时间')
+    last_report_type = models.CharField(max_length=20, choices=REPORT_TYPE_CHOICES, blank=True, verbose_name='最后上报类型')
+    current_task_id = models.IntegerField(null=True, blank=True, verbose_name='当前任务ID')
+    current_route_id = models.IntegerField(null=True, blank=True, verbose_name='当前航线ID')
+    current_line_id = models.IntegerField(null=True, blank=True, verbose_name='当前线路ID')
     max_flight_time = models.IntegerField(default=30, verbose_name='最大续航(分钟)')
     payload = models.CharField(max_length=200, blank=True, verbose_name='载荷')
+    mqtt_token = models.CharField(max_length=100, blank=True, verbose_name='MQTT认证Token')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
     class Meta:
@@ -32,6 +54,167 @@ class Drone(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.model})'
+
+    def is_online(self):
+        if not self.last_heartbeat:
+            return False
+        from django.utils import timezone
+        return (timezone.now() - self.last_heartbeat).total_seconds() < 60
+
+
+class DroneTelemetry(models.Model):
+    drone = models.ForeignKey(Drone, on_delete=models.CASCADE, related_name='telemetries', verbose_name='无人机')
+    report_time = models.DateTimeField(verbose_name='上报时间')
+    latitude = models.FloatField(verbose_name='纬度')
+    longitude = models.FloatField(verbose_name='经度')
+    altitude = models.FloatField(default=0, verbose_name='高度(m)')
+    speed = models.FloatField(default=0, verbose_name='速度(m/s)')
+    heading = models.FloatField(default=0, verbose_name='航向(度)')
+    battery = models.IntegerField(default=100, verbose_name='电量(%)')
+    signal_strength = models.IntegerField(default=100, verbose_name='信号强度(%)')
+    satellites = models.IntegerField(default=0, verbose_name='卫星数')
+    temperature = models.FloatField(null=True, blank=True, verbose_name='温度(℃)')
+    wind_speed = models.FloatField(null=True, blank=True, verbose_name='风速(m/s)')
+    extra_data = JSONField(default=dict, blank=True, verbose_name='扩展数据')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'inspection_drone_telemetry'
+        verbose_name = '无人机遥测数据'
+        verbose_name_plural = '无人机遥测数据'
+        ordering = ['-report_time']
+
+    def __str__(self):
+        return f'{self.drone.name} - {self.report_time}'
+
+
+class DroneEvent(models.Model):
+    EVENT_LEVEL_CHOICES = [
+        ('info', '信息'),
+        ('warning', '警告'),
+        ('error', '异常'),
+        ('critical', '严重'),
+    ]
+
+    EVENT_CATEGORY_CHOICES = [
+        ('battery', '电量异常'),
+        ('signal', '信号异常'),
+        ('weather', '气象异常'),
+        ('flight', '飞行异常'),
+        ('device', '设备故障'),
+        ('obstacle', '避障告警'),
+        ('other', '其他'),
+    ]
+
+    drone = models.ForeignKey(Drone, on_delete=models.CASCADE, related_name='events', verbose_name='无人机')
+    report_time = models.DateTimeField(verbose_name='上报时间')
+    event_level = models.CharField(max_length=20, choices=EVENT_LEVEL_CHOICES, default='info', verbose_name='事件级别')
+    event_category = models.CharField(max_length=30, choices=EVENT_CATEGORY_CHOICES, default='other', verbose_name='事件类别')
+    event_code = models.CharField(max_length=50, blank=True, verbose_name='事件代码')
+    title = models.CharField(max_length=200, verbose_name='事件标题')
+    description = models.TextField(blank=True, verbose_name='事件描述')
+    latitude = models.FloatField(null=True, blank=True, verbose_name='纬度')
+    longitude = models.FloatField(null=True, blank=True, verbose_name='经度')
+    altitude = models.FloatField(null=True, blank=True, verbose_name='高度(m)')
+    handled = models.BooleanField(default=False, verbose_name='是否已处理')
+    handled_note = models.TextField(blank=True, verbose_name='处理说明')
+    handled_at = models.DateTimeField(null=True, blank=True, verbose_name='处理时间')
+    extra_data = JSONField(default=dict, blank=True, verbose_name='扩展数据')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'inspection_drone_event'
+        verbose_name = '无人机事件'
+        verbose_name_plural = '无人机事件'
+        ordering = ['-report_time']
+
+    def __str__(self):
+        return f'{self.drone.name} - {self.get_event_level_display()} - {self.title}'
+
+
+class DroneMediaReport(models.Model):
+    MEDIA_TYPE_CHOICES = [
+        ('image', '图片'),
+        ('video', '视频'),
+        ('panorama', '全景图'),
+    ]
+
+    drone = models.ForeignKey(Drone, on_delete=models.CASCADE, related_name='media_reports', verbose_name='无人机')
+    task = models.ForeignKey('InspectionTask', on_delete=models.SET_NULL, null=True, blank=True, related_name='media_reports', verbose_name='巡检任务')
+    report_time = models.DateTimeField(verbose_name='上报时间')
+    media_type = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES, default='image', verbose_name='媒体类型')
+    file_name = models.CharField(max_length=255, verbose_name='文件名')
+    file_url = models.URLField(max_length=500, verbose_name='文件访问链接')
+    thumbnail_url = models.URLField(max_length=500, blank=True, verbose_name='缩略图链接')
+    file_size = models.BigIntegerField(default=0, verbose_name='文件大小(字节)')
+    duration = models.IntegerField(default=0, verbose_name='时长(秒)')
+    latitude = models.FloatField(null=True, blank=True, verbose_name='纬度')
+    longitude = models.FloatField(null=True, blank=True, verbose_name='经度')
+    altitude = models.FloatField(null=True, blank=True, verbose_name='高度(m)')
+    heading = models.FloatField(null=True, blank=True, verbose_name='航向(度)')
+    tower_id = models.IntegerField(null=True, blank=True, verbose_name='关联杆塔ID')
+    uploaded = models.BooleanField(default=False, verbose_name='是否已入库')
+    media_id = models.IntegerField(null=True, blank=True, verbose_name='对应影像ID')
+    extra_data = JSONField(default=dict, blank=True, verbose_name='扩展数据')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'inspection_drone_media_report'
+        verbose_name = '无人机媒体上报'
+        verbose_name_plural = '无人机媒体上报'
+        ordering = ['-report_time']
+
+    def __str__(self):
+        return f'{self.drone.name} - {self.get_media_type_display()} - {self.file_name}'
+
+
+class DroneTaskSummary(models.Model):
+    TASK_STATUS_CHOICES = [
+        ('takeoff', '起飞'),
+        ('climbing', '爬升中'),
+        ('cruising', '巡航中'),
+        ('turning', '转弯中'),
+        ('descending', '下降中'),
+        ('landing', '降落中'),
+        ('paused', '暂停'),
+        ('returning', '返航中'),
+        ('completed', '任务完成'),
+        ('aborted', '任务中止'),
+        ('error', '异常中断'),
+    ]
+
+    drone = models.ForeignKey(Drone, on_delete=models.CASCADE, related_name='task_summaries', verbose_name='无人机')
+    task = models.ForeignKey('InspectionTask', on_delete=models.CASCADE, related_name='task_summaries', verbose_name='巡检任务')
+    route = models.ForeignKey('FlightRoute', on_delete=models.SET_NULL, null=True, blank=True, related_name='task_summaries', verbose_name='飞行航线')
+    report_time = models.DateTimeField(verbose_name='上报时间')
+    task_status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, verbose_name='任务状态')
+    flight_phase = models.CharField(max_length=50, blank=True, verbose_name='飞行阶段')
+    current_waypoint_index = models.IntegerField(default=0, verbose_name='当前航点索引')
+    total_waypoints = models.IntegerField(default=0, verbose_name='总航点数')
+    progress = models.FloatField(default=0, verbose_name='任务进度(%)')
+    flight_distance = models.FloatField(default=0, verbose_name='已飞行距离(m)')
+    remaining_distance = models.FloatField(default=0, verbose_name='剩余距离(m)')
+    elapsed_time = models.IntegerField(default=0, verbose_name='已用时间(秒)')
+    remaining_time = models.IntegerField(default=0, verbose_name='预计剩余时间(秒)')
+    photos_taken = models.IntegerField(default=0, verbose_name='已拍摄照片数')
+    videos_recorded = models.IntegerField(default=0, verbose_name='已录制视频数')
+    battery_used = models.IntegerField(default=0, verbose_name='已消耗电量(%)')
+    latitude = models.FloatField(null=True, blank=True, verbose_name='纬度')
+    longitude = models.FloatField(null=True, blank=True, verbose_name='经度')
+    altitude = models.FloatField(default=0, verbose_name='高度(m)')
+    speed = models.FloatField(default=0, verbose_name='速度(m/s)')
+    heading = models.FloatField(default=0, verbose_name='航向(度)')
+    extra_data = JSONField(default=dict, blank=True, verbose_name='扩展数据')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'inspection_drone_task_summary'
+        verbose_name = '无人机任务汇总'
+        verbose_name_plural = '无人机任务汇总'
+        ordering = ['-report_time']
+
+    def __str__(self):
+        return f'{self.drone.name} - {self.task.code} - {self.get_task_status_display()}'
 
 
 class FlightRoute(models.Model):

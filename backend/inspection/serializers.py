@@ -27,12 +27,24 @@ def validate_lat(value):
 
 class DroneSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    is_online = serializers.BooleanField(read_only=True)
+    last_report_type_display = serializers.CharField(source='get_last_report_type_display', read_only=True)
 
     class Meta:
         model = Drone
-        fields = ['id', 'name', 'model', 'serial_number', 'status', 'status_display',
-                  'battery', 'max_flight_time', 'payload', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'name', 'model', 'serial_number', 'firmware_version',
+                  'status', 'status_display', 'is_online',
+                  'battery', 'signal_strength', 'latitude', 'longitude',
+                  'altitude', 'speed', 'heading',
+                  'last_heartbeat', 'last_report_time', 'last_report_type', 'last_report_type_display',
+                  'current_task_id', 'current_route_id', 'current_line_id',
+                  'max_flight_time', 'payload', 'mqtt_token',
+                  'created_at']
+        read_only_fields = ['id', 'created_at', 'last_heartbeat', 'last_report_time',
+                            'last_report_type', 'current_task_id', 'current_route_id',
+                            'current_line_id', 'latitude', 'longitude', 'altitude',
+                            'speed', 'heading', 'battery', 'signal_strength',
+                            'is_online', 'last_report_type_display']
 
 
 class FlightRouteVersionSerializer(serializers.ModelSerializer):
