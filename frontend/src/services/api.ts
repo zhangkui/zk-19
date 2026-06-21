@@ -120,6 +120,7 @@ export const tasksApi = {
     }),
   start: (id: number) => api.post(`/tasks/${id}/start/`),
   complete: (id: number) => api.post(`/tasks/${id}/complete/`),
+  telemetry: (id: number) => api.get(`/tasks/${id}/telemetry/`),
 }
 
 export const mediaApi = {
@@ -162,6 +163,16 @@ export const statsApi = {
   trends: (days?: number) => api.get('/stats/trends/', { params: { days } }),
   defectTypes: () => api.get('/stats/defect_types/'),
   heatmap: () => api.get('/stats/heatmap/'),
+}
+
+export const systemLogsApi = {
+  list: (params?: any) => api.get('/system-logs/', { params }),
+  get: (id: number) => api.get(`/system-logs/${id}/`),
+}
+
+export const droneTelemetriesApi = {
+  list: (params?: any) => api.get('/drone-telemetries/', { params }),
+  get: (id: number) => api.get(`/drone-telemetries/${id}/`),
 }
 
 export default api

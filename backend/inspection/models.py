@@ -580,3 +580,108 @@ class Alert(models.Model):
 
     def __str__(self):
         return f'{self.get_level_display()} - {self.title}'
+
+
+class SystemLog(models.Model):
+    LOG_TYPE_CHOICES = [
+        ('push', '系统推送'),
+        ('report', '无人机上报'),
+    ]
+
+    LOG_CATEGORY_CHOICES = [
+        ('heartbeat', '心跳上报'),
+        ('telemetry', '遥测上报'),
+        ('media', '媒体上报'),
+        ('event', '事件上报'),
+        ('task_summary', '任务汇总'),
+        ('task_bind', '任务绑定'),
+        ('task_unbind', '任务解绑'),
+        ('task_start', '任务开始'),
+        ('task_pause', '任务暂停'),
+        ('task_resume', '任务恢复'),
+        ('task_stop', '任务停止'),
+        ('return_home', '返航指令'),
+        ('command', '通用指令'),
+        ('other', '其他'),
+    ]
+
+    LOG_LEVEL_CHOICES = [
+        ('info', '信息'),
+        ('warning', '警告'),
+        ('error', '错误'),
+        ('critical', '严重'),
+    ]
+
+    log_type = models.CharField(max_length=10, choices=LOG_TYPE_CHOICES, verbose_name='日志类型')
+    log_category = models.CharField(max_length=30, choices=LOG_CATEGORY_CHOICES, default='other', verbose_name='日志类别')
+    log_level = models.CharField(max_length=10, choices=LOG_LEVEL_CHOICES, default='info', verbose_name='日志级别')
+    drone = models.ForeignKey(Drone, on_delete=models.SET_NULL, null=True, blank=True, related_name='logs', verbose_name='无人机')
+    task = models.ForeignKey(InspectionTask, on_delete=models.SET_NULL, null=True, blank=True, related_name='logs', verbose_name='巡检任务')
+    title = models.CharField(max_length=200, verbose_name='日志标题')
+    content = models.TextField(blank=True, verbose_name='日志内容')
+    raw_data = JSONField(default=dict, blank=True, verbose_name='原始数据')
+    latitude = models.FloatField(null=True, blank=True, verbose_name='纬度')
+    longitude = models.FloatField(null=True, blank=True, verbose_name='经度')
+    altitude = models.FloatField(null=True, blank=True, verbose_name='高度(m)')
+    speed = models.FloatField(null=True, blank=True, verbose_name='速度(m/s)')
+    battery = models.IntegerField(null=True, blank=True, verbose_name='电量(%)')
+    signal_strength = models.IntegerField(null=True, blank=True, verbose_name='信号强度(%)')
+    report_time = models.DateTimeField(verbose_name='上报/推送时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'inspection_system_log'
+        verbose_name = '系统日志'
+        verbose_name_plural = '系统日志'
+        ordering = ['-report_time', '-created_at']
+        indexes = [
+            models.Index(fields=['log_type', 'log_category']),
+            models.Index(fields=['drone', 'report_time']),
+            models.Index(fields=['task', 'report_time']),
+        ]
+
+    def __str__(self):
+        drone_name = self.drone.name if self.drone else '未知设备'
+        return f'[{self.get_log_type_display()}] {drone_name} - {self.title}'
+
+    @staticmethod
+    def log_push(drone, task, category, title, content='', raw_data=None, **kwargs):
+        from django.utils import timezone
+        return SystemLog.objects.create(
+            log_type='push',
+            log_category=category,
+            log_level=kwargs.get('log_level', 'info'),
+            drone=drone,
+            task=task,
+            title=title,
+            content=content,
+            raw_data=raw_data or {},
+            report_time=kwargs.get('report_time') or timezone.now(),
+            latitude=kwargs.get('latitude'),
+            longitude=kwargs.get('longitude'),
+            altitude=kwargs.get('altitude'),
+            speed=kwargs.get('speed'),
+            battery=kwargs.get('battery'),
+            signal_strength=kwargs.get('signal_strength'),
+        )
+
+    @staticmethod
+    def log_report(drone, task, category, title, content='', raw_data=None, **kwargs):
+        from django.utils import timezone
+        return SystemLog.objects.create(
+            log_type='report',
+            log_category=category,
+            log_level=kwargs.get('log_level', 'info'),
+            drone=drone,
+            task=task,
+            title=title,
+            content=content,
+            raw_data=raw_data or {},
+            report_time=kwargs.get('report_time') or timezone.now(),
+            latitude=kwargs.get('latitude'),
+            longitude=kwargs.get('longitude'),
+            altitude=kwargs.get('altitude'),
+            speed=kwargs.get('speed'),
+            battery=kwargs.get('battery'),
+            signal_strength=kwargs.get('signal_strength'),
+        )

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { Zap, Map, Route, ClipboardList, AlertTriangle, Image, Wrench, BarChart3, ChevronLeft, ChevronRight, Bell, User, LogOut, Settings, Cpu, Users } from 'lucide-react'
+import { Zap, Map, Route, ClipboardList, AlertTriangle, Image, Wrench, BarChart3, ChevronLeft, ChevronRight, Bell, User, LogOut, Settings, Cpu, Users, FileText } from 'lucide-react'
 import {
   LayoutDashboard,
   Power,
@@ -19,6 +19,7 @@ const allMenuItems = [
   { path: '/defects', label: '缺陷识别', icon: FileSearch },
   { path: '/alerts', label: '隐患告警', icon: AlertTriangle },
   { path: '/replay', label: '影像回放', icon: Image },
+  { path: '/logs', label: '日志管理', icon: FileText },
   { path: '/workorders', label: '消缺工单', icon: Wrench },
   { path: '/analytics', label: '统计分析', icon: BarChart3 },
   { path: '/accounts', label: '账号管理', icon: Users },

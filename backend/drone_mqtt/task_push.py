@@ -57,6 +57,18 @@ class TaskPushService:
         topic = get_topic(TOPIC_TASK_BIND, device_id)
         result = publisher.publish(topic, payload, qos=2)
 
+        from inspection.models import SystemLog
+        log_level = 'info' if result else 'error'
+        SystemLog.log_push(
+            drone=task.drone,
+            task=task,
+            category='task_bind',
+            title=f'任务绑定推送: {task.code}',
+            content=f'推送任务「{task.name}」到无人机「{task.drone.name}」' + ('' if result else f'，失败: {result.get("message", "未知错误")}'),
+            raw_data=payload,
+            log_level=log_level
+        )
+
         if result:
             logger.info(f'任务绑定推送成功: task={task.code} drone={task.drone.name} topic={topic}')
             return {
@@ -93,6 +105,19 @@ class TaskPushService:
 
         topic = get_topic(TOPIC_TASK_CONTROL, device_id)
         result = publisher.publish(topic, payload, qos=2)
+
+        from inspection.models import SystemLog
+        log_level = 'info' if result else 'warning'
+        SystemLog.log_push(
+            drone=task.drone,
+            task=task,
+            category='task_unbind',
+            title=f'任务解绑推送: {task.code}',
+            content=f'解绑无人机「{task.drone.name}」与任务「{task.name}」',
+            raw_data=payload,
+            log_level=log_level
+        )
+
         if result:
             logger.info(f'任务解绑推送成功: task={task.code} drone={task.drone.name}')
         else:
@@ -133,6 +158,26 @@ class TaskPushService:
         }
         action_name = action_map.get(action, action)
 
+        from inspection.models import SystemLog
+        category_map = {
+            'start': 'task_start',
+            'pause': 'task_pause',
+            'resume': 'task_resume',
+            'stop': 'task_stop',
+            'return_home': 'return_home',
+        }
+        log_category = category_map.get(action, 'command')
+        log_level = 'info' if result else 'error'
+        SystemLog.log_push(
+            drone=task.drone,
+            task=task,
+            category=log_category,
+            title=f'{action_name}指令推送: {task.code}',
+            content=f'向无人机「{task.drone.name}」发送{action_name}指令' + ('' if result else '，失败'),
+            raw_data=payload,
+            log_level=log_level
+        )
+
         if result:
             logger.info(f'任务控制推送成功: task={task.code} action={action_name}')
             return {'success': True, 'message': f'{action_name}指令发送成功'}
@@ -160,6 +205,18 @@ class TaskPushService:
 
         topic = get_topic(TOPIC_CMD, device_id)
         result = publisher.publish(topic, payload, qos=1)
+
+        from inspection.models import SystemLog
+        log_level = 'info' if result else 'error'
+        SystemLog.log_push(
+            drone=drone,
+            task=None,
+            category='command',
+            title=f'通用指令推送: {command}',
+            content=f'向无人机「{drone.name}」发送指令「{command}」' + ('' if result else '，失败'),
+            raw_data=payload,
+            log_level=log_level
+        )
 
         if result:
             logger.info(f'指令推送成功: drone={drone.name} command={command}')

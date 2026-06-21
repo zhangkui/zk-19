@@ -58,6 +58,7 @@ export const MENU_ROLE_ACCESS: Record<string, Role[]> = {
   '/defects': ['superadmin', 'admin', 'reviewer', 'pilot', 'crew'],
   '/alerts': ['superadmin', 'admin', 'reviewer'],
   '/replay': ['superadmin', 'admin', 'pilot', 'reviewer'],
+  '/logs': ['superadmin', 'admin', 'pilot', 'reviewer'],
   '/workorders': ['superadmin', 'admin', 'crew'],
   '/analytics': ['superadmin', 'admin'],
   '/accounts': ['superadmin'],

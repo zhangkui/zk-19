@@ -370,3 +370,73 @@ export interface TrendData {
   daily: { date: string; count: number }[]
   by_type: Record<string, { total: number; [key: string]: number }>
 }
+
+export interface SystemLog {
+  id: number
+  log_type: 'push' | 'report'
+  log_type_display: string
+  log_category: string
+  log_category_display: string
+  log_level: 'info' | 'warning' | 'error' | 'critical'
+  log_level_display: string
+  drone: number | null
+  drone_name: string | null
+  drone_serial: string | null
+  task: number | null
+  task_code: string | null
+  task_name: string | null
+  title: string
+  content: string
+  raw_data: any
+  latitude: number | null
+  longitude: number | null
+  altitude: number | null
+  speed: number | null
+  battery: number | null
+  signal_strength: number | null
+  coordinates: { lon: number; lat: number } | null
+  report_time: string
+  created_at: string
+}
+
+export interface DroneTelemetry {
+  id: number
+  drone: number
+  drone_name: string
+  report_time: string
+  latitude: number
+  longitude: number
+  altitude: number
+  speed: number
+  heading: number
+  battery: number
+  signal_strength: number
+  satellites: number
+  temperature: number | null
+  wind_speed: number | null
+  coordinates: { lon: number; lat: number }
+  extra_data: any
+}
+
+export interface InspectionTaskDetail extends InspectionTask {
+  route_data: {
+    id: number
+    name: string
+    coordinates: [number, number][]
+    waypoints_data: any[]
+    altitude: number
+    speed: number
+    distance: number
+    estimated_duration: number
+  } | null
+  line_data: {
+    id: number
+    name: string
+    voltage: string
+    voltage_display: string
+    coordinates: [number, number][]
+    description: string
+  } | null
+  towers_data: Tower[]
+  sections_data: Section[]
+}

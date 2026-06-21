@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.gis.geos import Point, LineString
 from django.contrib.gis.db.models.functions import Distance
-from .models import Drone, FlightRoute, FlightRouteVersion, InspectionTask, InspectionMedia, Defect, Alert
+from .models import Drone, FlightRoute, FlightRouteVersion, InspectionTask, InspectionMedia, Defect, Alert, SystemLog, DroneTelemetry
 from lines.models import Tower, Section
 
 
@@ -396,3 +396,103 @@ class AlertSerializer(serializers.ModelSerializer):
                   'handled_by', 'handled_by_name', 'handled_at', 'handle_note',
                   'created_at']
         read_only_fields = ['id', 'created_at']
+
+
+class SystemLogSerializer(serializers.ModelSerializer):
+    log_type_display = serializers.CharField(source='get_log_type_display', read_only=True)
+    log_category_display = serializers.CharField(source='get_log_category_display', read_only=True)
+    log_level_display = serializers.CharField(source='get_log_level_display', read_only=True)
+    drone_name = serializers.CharField(source='drone.name', read_only=True, default=None)
+    drone_serial = serializers.CharField(source='drone.serial_number', read_only=True, default=None)
+    task_code = serializers.CharField(source='task.code', read_only=True, default=None)
+    task_name = serializers.CharField(source='task.name', read_only=True, default=None)
+    coordinates = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SystemLog
+        fields = ['id', 'log_type', 'log_type_display', 'log_category', 'log_category_display',
+                  'log_level', 'log_level_display', 'drone', 'drone_name', 'drone_serial',
+                  'task', 'task_code', 'task_name', 'title', 'content', 'raw_data',
+                  'latitude', 'longitude', 'altitude', 'speed', 'battery', 'signal_strength',
+                  'coordinates', 'report_time', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def get_coordinates(self, obj):
+        if obj.latitude and obj.longitude:
+            return {'lon': obj.longitude, 'lat': obj.latitude}
+        return None
+
+
+class DroneTelemetrySerializer(serializers.ModelSerializer):
+    drone_name = serializers.CharField(source='drone.name', read_only=True)
+    coordinates = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DroneTelemetry
+        fields = ['id', 'drone', 'drone_name', 'report_time', 'latitude', 'longitude',
+                  'altitude', 'speed', 'heading', 'battery', 'signal_strength',
+                  'satellites', 'temperature', 'wind_speed', 'coordinates', 'extra_data']
+        read_only_fields = ['id']
+
+    def get_coordinates(self, obj):
+        return {'lon': obj.longitude, 'lat': obj.latitude}
+
+
+class InspectionTaskDetailSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    route_name = serializers.CharField(source='route.name', read_only=True)
+    drone_name = serializers.CharField(source='drone.name', read_only=True)
+    pilot_name = serializers.CharField(source='pilot.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.name', read_only=True)
+    route_data = serializers.SerializerMethodField()
+    line_data = serializers.SerializerMethodField()
+    towers_data = serializers.SerializerMethodField()
+    sections_data = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InspectionTask
+        fields = ['id', 'code', 'name', 'route', 'route_name', 'drone', 'drone_name',
+                  'pilot', 'pilot_name', 'status', 'status_display', 'planned_date',
+                  'started_at', 'ended_at', 'media_count', 'defect_count',
+                  'notes', 'created_by', 'created_by_name', 'created_at',
+                  'route_data', 'line_data', 'towers_data', 'sections_data']
+        read_only_fields = ['id', 'code', 'media_count', 'defect_count', 'created_by', 'created_at']
+
+    def get_route_data(self, obj):
+        if obj.route:
+            return {
+                'id': obj.route.id,
+                'name': obj.route.name,
+                'coordinates': list(obj.route.waypoints.coords) if obj.route.waypoints else [],
+                'waypoints_data': obj.route.waypoints_data,
+                'altitude': obj.route.altitude,
+                'speed': obj.route.speed,
+                'distance': obj.route.distance,
+                'estimated_duration': obj.route.estimated_duration,
+            }
+        return None
+
+    def get_line_data(self, obj):
+        if obj.route and obj.route.line:
+            line = obj.route.line
+            return {
+                'id': line.id,
+                'name': line.name,
+                'voltage': line.voltage,
+                'voltage_display': line.get_voltage_display(),
+                'coordinates': list(line.geom.coords) if line.geom else [],
+                'description': line.description,
+            }
+        return None
+
+    def get_towers_data(self, obj):
+        if obj.route and obj.route.line:
+            towers = obj.route.get_nearby_towers()
+            return TowerSimpleSerializer(towers, many=True).data
+        return []
+
+    def get_sections_data(self, obj):
+        if obj.route and obj.route.line:
+            sections = obj.route.get_affected_sections()
+            return SectionSimpleSerializer(sections, many=True).data
+        return []

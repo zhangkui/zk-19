@@ -13,6 +13,7 @@ import Defects from './pages/Defects'
 import DefectDetail from './pages/DefectDetail'
 import Alerts from './pages/Alerts'
 import Replay from './pages/Replay'
+import LogManagement from './pages/LogManagement'
 import WorkOrders from './pages/WorkOrders'
 import WorkOrderDetail from './pages/WorkOrderDetail'
 import Analytics from './pages/Analytics'
@@ -141,6 +142,14 @@ function App() {
           element={
             <RoleProtectedRoute path="/replay">
               <Replay />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="logs"
+          element={
+            <RoleProtectedRoute path="/logs">
+              <LogManagement />
             </RoleProtectedRoute>
           }
         />

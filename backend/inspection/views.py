@@ -14,15 +14,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from .models import Drone, FlightRoute, FlightRouteVersion, InspectionTask, InspectionMedia, Defect, Alert
+from .models import Drone, FlightRoute, FlightRouteVersion, InspectionTask, InspectionMedia, Defect, Alert, SystemLog, DroneTelemetry
 from .serializers import (
     DroneSerializer,
     FlightRouteSerializer, FlightRouteListSerializer, FlightRouteDetailSerializer,
     FlightRouteVersionSerializer,
-    InspectionTaskSerializer, InspectionTaskListSerializer,
+    InspectionTaskSerializer, InspectionTaskListSerializer, InspectionTaskDetailSerializer,
     InspectionMediaSerializer,
     DefectSerializer, DefectListSerializer,
     AlertSerializer, AlertListSerializer,
+    SystemLogSerializer,
+    DroneTelemetrySerializer,
 )
 from .tasks import process_inspection_media_task
 
@@ -198,6 +200,8 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list':
             return InspectionTaskListSerializer
+        elif self.action == 'retrieve':
+            return InspectionTaskDetailSerializer
         return InspectionTaskSerializer
 
     def perform_create(self, serializer):
@@ -375,6 +379,19 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
         task.save()
         return Response({'message': 'Task completed'})
 
+    @action(detail=True, methods=['get'])
+    def telemetry(self, request, pk=None):
+        task = self.get_object()
+        if not task.drone:
+            return Response([])
+        telemetries = DroneTelemetry.objects.filter(
+            drone=task.drone,
+            report_time__gte=task.started_at or timezone.datetime.min,
+            report_time__lte=task.ended_at or timezone.now()
+        ).order_by('report_time')
+        serializer = DroneTelemetrySerializer(telemetries, many=True)
+        return Response(serializer.data)
+
 
 class InspectionMediaViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = InspectionMedia.objects.all()
@@ -483,3 +500,33 @@ class AlertViewSet(viewsets.ModelViewSet):
             'major': major,
             'minor': count - critical - major
         })
+
+
+class SystemLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = SystemLog.objects.all()
+    permission_classes = [IsAuthenticated]
+    serializer_class = SystemLogSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filterset_fields = ['log_type', 'log_category', 'log_level', 'drone', 'task']
+    search_fields = ['title', 'content', 'drone__name', 'drone__serial_number', 'task__code', 'task__name']
+
+
+class DroneTelemetryViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = DroneTelemetry.objects.all()
+    permission_classes = [IsAuthenticated]
+    serializer_class = DroneTelemetrySerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['drone']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        drone_id = self.request.query_params.get('drone')
+        if drone_id:
+            qs = qs.filter(drone_id=drone_id)
+        start_time = self.request.query_params.get('start_time')
+        end_time = self.request.query_params.get('end_time')
+        if start_time:
+            qs = qs.filter(report_time__gte=start_time)
+        if end_time:
+            qs = qs.filter(report_time__lte=end_time)
+        return qs.order_by('report_time')

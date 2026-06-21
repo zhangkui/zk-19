@@ -77,6 +77,29 @@ class MessageHandler:
             'battery', 'signal_strength', 'latitude', 'longitude',
             'altitude', 'speed', 'heading', 'firmware_version', 'status'
         ])
+
+        from inspection.models import SystemLog
+        task = None
+        if drone.current_task_id:
+            from inspection.models import InspectionTask
+            task = InspectionTask.objects.filter(id=drone.current_task_id).first()
+        SystemLog.log_report(
+            drone=drone,
+            task=task,
+            category='heartbeat',
+            title=f'{drone.name} 心跳上报',
+            content=f'电量={drone.battery}%, 信号={drone.signal_strength}%',
+            raw_data=data,
+            report_time=now,
+            latitude=drone.latitude,
+            longitude=drone.longitude,
+            altitude=drone.altitude,
+            speed=drone.speed,
+            battery=drone.battery,
+            signal_strength=drone.signal_strength,
+            log_level='info'
+        )
+
         logger.info(f'心跳上报: {drone.name}({drone.serial_number}) 电量={drone.battery}%')
         return True
 
@@ -126,6 +149,28 @@ class MessageHandler:
             'altitude', 'speed', 'heading', 'battery', 'signal_strength', 'status'
         ])
 
+        from inspection.models import SystemLog
+        task = None
+        if drone.current_task_id:
+            from inspection.models import InspectionTask
+            task = InspectionTask.objects.filter(id=drone.current_task_id).first()
+        SystemLog.log_report(
+            drone=drone,
+            task=task,
+            category='telemetry',
+            title=f'{drone.name} 遥测上报',
+            content=f'位置=({telemetry.latitude:.6f}, {telemetry.longitude:.6f}) 高度={telemetry.altitude}m 速度={telemetry.speed}m/s',
+            raw_data=data,
+            report_time=report_time,
+            latitude=telemetry.latitude,
+            longitude=telemetry.longitude,
+            altitude=telemetry.altitude,
+            speed=telemetry.speed,
+            battery=telemetry.battery,
+            signal_strength=telemetry.signal_strength,
+            log_level='info'
+        )
+
         logger.info(f'遥测上报: {drone.name} 位置=({telemetry.latitude:.6f}, {telemetry.longitude:.6f}) 高度={telemetry.altitude}m')
         return True
 
@@ -162,6 +207,26 @@ class MessageHandler:
         drone.save(update_fields=['last_report_time', 'last_report_type'])
 
         self._sync_event_to_alert(event)
+
+        from inspection.models import SystemLog
+        task = None
+        if drone.current_task_id:
+            from inspection.models import InspectionTask
+            task = InspectionTask.objects.filter(id=drone.current_task_id).first()
+        level_map = {'info': 'info', 'warning': 'warning', 'error': 'error', 'critical': 'critical'}
+        SystemLog.log_report(
+            drone=drone,
+            task=task,
+            category='event',
+            title=f'{drone.name} {event.title}',
+            content=event.description or f'{event.get_event_category_display()} - {event.get_event_level_display()}',
+            raw_data=data,
+            report_time=report_time,
+            latitude=event.latitude,
+            longitude=event.longitude,
+            altitude=event.altitude,
+            log_level=level_map.get(event.event_level, 'info')
+        )
 
         logger.info(f'事件上报: {drone.name} [{event.get_event_level_display()}] {event.title}')
         return True
@@ -206,6 +271,21 @@ class MessageHandler:
         drone.save(update_fields=['last_report_time', 'last_report_type'])
 
         self._sync_media_to_inspection(media_report, task)
+
+        from inspection.models import SystemLog
+        SystemLog.log_report(
+            drone=drone,
+            task=task,
+            category='media',
+            title=f'{drone.name} {media_report.get_media_type_display()}上报',
+            content=f'文件: {media_report.file_name}, 大小: {media_report.file_size}字节',
+            raw_data=data,
+            report_time=report_time,
+            latitude=media_report.latitude,
+            longitude=media_report.longitude,
+            altitude=media_report.altitude,
+            log_level='info'
+        )
 
         logger.info(f'媒体上报: {drone.name} {media_report.get_media_type_display()} {media_report.file_name}')
         return True
@@ -286,6 +366,28 @@ class MessageHandler:
         ])
 
         self._update_task_progress(summary)
+
+        from inspection.models import SystemLog
+        log_level = 'info'
+        if summary.task_status in ['error', 'aborted']:
+            log_level = 'error'
+        elif summary.task_status == 'completed':
+            log_level = 'info'
+        SystemLog.log_report(
+            drone=drone,
+            task=task,
+            category='task_summary',
+            title=f'{drone.name} 任务{summary.get_task_status_display()}',
+            content=f'任务: {task.code}, 进度: {summary.progress:.1f}%, 已飞行: {summary.flight_distance}m',
+            raw_data=data,
+            report_time=report_time,
+            latitude=summary.latitude,
+            longitude=summary.longitude,
+            altitude=summary.altitude,
+            speed=summary.speed,
+            battery=100 - summary.battery_used,
+            log_level=log_level
+        )
 
         logger.info(f'任务汇总: {drone.name} {task.code} 进度={summary.progress:.1f}% 状态={summary.get_task_status_display()}')
         return True
