@@ -121,6 +121,8 @@ export const tasksApi = {
   start: (id: number) => api.post(`/tasks/${id}/start/`),
   complete: (id: number) => api.post(`/tasks/${id}/complete/`),
   telemetry: (id: number) => api.get(`/tasks/${id}/telemetry/`),
+  taskControl: (taskId: number, action: 'start' | 'pause' | 'resume' | 'stop' | 'return_home', params?: any) =>
+    api.post('/mqtt/task-push/task_control/', { task_id: taskId, action, params: params || {} }),
 }
 
 export const mediaApi = {
@@ -173,6 +175,12 @@ export const systemLogsApi = {
 export const droneTelemetriesApi = {
   list: (params?: any) => api.get('/drone-telemetries/', { params }),
   get: (id: number) => api.get(`/drone-telemetries/${id}/`),
+}
+
+export const droneTaskSummariesApi = {
+  list: (params?: any) => api.get('/mqtt/task-summaries/', { params }),
+  byTask: (taskId: number) => api.get('/mqtt/task-summaries/by_task/', { params: { task_id: taskId } }),
+  byDrone: (droneId: number) => api.get('/mqtt/task-summaries/', { params: { drone: droneId } }),
 }
 
 export default api

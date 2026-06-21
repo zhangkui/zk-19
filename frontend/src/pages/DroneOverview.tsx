@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import api, { dronesApi, tasksApi, systemLogsApi, droneTelemetriesApi } from '../services/api'
-import type { Drone, DroneTelemetry, SystemLog, InspectionTask, InspectionTaskDetail } from '../types'
+import { dronesApi, tasksApi, systemLogsApi, droneTelemetriesApi, droneTaskSummariesApi } from '../services/api'
+import type { Drone, DroneTelemetry, SystemLog, InspectionTask, InspectionTaskDetail, DroneTaskSummary } from '../types'
 import Badge from '../components/Badge'
 import MapComponent from '../components/MapComponent'
 import { Marker, Popup, Polyline, CircleMarker, useMap } from 'react-leaflet'
@@ -108,6 +108,7 @@ export default function DroneOverview() {
   const [drones, setDrones] = useState<Drone[]>([])
   const [telemetries, setTelemetries] = useState<DroneTelemetry[]>([])
   const [tasks, setTasks] = useState<InspectionTask[]>([])
+  const [taskSummaries, setTaskSummaries] = useState<DroneTaskSummary[]>([])
   const [logs, setLogs] = useState<SystemLog[]>([])
   const [loading, setLoading] = useState(false)
   const [logsLoading, setLogsLoading] = useState(false)
@@ -148,14 +149,16 @@ export default function DroneOverview() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const [dronesRes, tasksRes, telemetryRes] = await Promise.all([
+      const [dronesRes, tasksRes, telemetryRes, summariesRes] = await Promise.all([
         dronesApi.list({ page_size: 100 }),
         tasksApi.list({ page_size: 100 }),
         droneTelemetriesApi.list({ page_size: 200 }),
+        droneTaskSummariesApi.list({ page_size: 200 }),
       ])
       setDrones(dronesRes.data.results || dronesRes.data)
       setTasks(tasksRes.data.results || tasksRes.data)
       setTelemetries(telemetryRes.data.results || telemetryRes.data)
+      setTaskSummaries(summariesRes.data.results || summariesRes.data)
     } catch (e) {
       console.error(e)
     } finally {
@@ -171,10 +174,15 @@ export default function DroneOverview() {
         setSelectedDrone(drone)
         setDetailSidebarOpen(true)
 
-        const telemetry = telemetries.find((t) => t.drone === selectedDroneId)
-        if (telemetry) {
-          setMapCenter([telemetry.latitude, telemetry.longitude])
+        if (drone.latitude != null && drone.longitude != null) {
+          setMapCenter([drone.latitude, drone.longitude])
           setMapZoom(15)
+        } else {
+          const telemetry = telemetries.find((t) => t.drone === selectedDroneId)
+          if (telemetry) {
+            setMapCenter([telemetry.latitude, telemetry.longitude])
+            setMapZoom(15)
+          }
         }
       }
     } catch (e) {
@@ -210,11 +218,14 @@ export default function DroneOverview() {
   }
 
   const getDroneOnlineStatus = (drone: Drone) => {
-    const telemetry = telemetries.find((t) => t.drone === drone.id)
-    if (!telemetry) return 'offline'
-    const lastReport = dayjs(telemetry.report_time)
-    const diffMinutes = dayjs().diff(lastReport, 'minute')
-    return diffMinutes < 5 ? 'online' : 'offline'
+    if (typeof drone.is_online === 'boolean') {
+      return drone.is_online ? 'online' : 'offline'
+    }
+    if (drone.last_heartbeat) {
+      const diffSeconds = dayjs().diff(dayjs(drone.last_heartbeat), 'second')
+      return diffSeconds < 60 ? 'online' : 'offline'
+    }
+    return 'offline'
   }
 
   const getDroneTelemetry = (droneId: number) => {
@@ -222,12 +233,23 @@ export default function DroneOverview() {
   }
 
   const getDroneCurrentTask = (droneId: number) => {
+    const drone = drones.find((d) => d.id === droneId)
+    if (drone?.current_task_id) {
+      return tasks.find((t) => t.id === drone.current_task_id)
+    }
     return tasks.find((t) => t.drone === droneId && t.status === 'running')
   }
 
   const getDroneLastHeartbeat = (droneId: number) => {
-    const telemetry = telemetries.find((t) => t.drone === droneId)
-    return telemetry ? telemetry.report_time : null
+    const drone = drones.find((d) => d.id === droneId)
+    return drone?.last_heartbeat || null
+  }
+
+  const getTaskLatestSummary = (taskId: number) => {
+    const summaries = taskSummaries
+      .filter((s) => s.task === taskId)
+      .sort((a, b) => dayjs(b.report_time).valueOf() - dayjs(a.report_time).valueOf())
+    return summaries[0] || null
   }
 
   const filteredDrones = useMemo(() => {
@@ -282,65 +304,70 @@ export default function DroneOverview() {
           message: '无人机已离线',
           time: getDroneLastHeartbeat(drone.id) || drone.created_at,
           level: 'error',
+          coordinates:
+            drone.latitude && drone.longitude
+              ? { lat: drone.latitude, lon: drone.longitude }
+              : undefined,
         })
       }
 
-      if (telemetry) {
-        if (telemetry.battery < 30) {
-          events.push({
-            id: `battery-${drone.id}`,
-            type: 'low_battery',
-            droneId: drone.id,
-            droneName: drone.name,
-            message: `低电量警告：${telemetry.battery}%`,
-            time: telemetry.report_time,
-            level: 'warning',
-            coordinates: telemetry.coordinates,
-          })
-        }
+      if (drone.battery < 30) {
+        events.push({
+          id: `battery-${drone.id}`,
+          type: 'low_battery',
+          droneId: drone.id,
+          droneName: drone.name,
+          message: `低电量警告：${drone.battery}%`,
+          time: drone.last_report_time || drone.last_heartbeat || drone.created_at,
+          level: 'warning',
+          coordinates:
+            drone.latitude && drone.longitude
+              ? { lat: drone.latitude, lon: drone.longitude }
+              : telemetry?.coordinates,
+        })
+      }
 
-        if (telemetry.signal_strength < 40) {
-          events.push({
-            id: `signal-${drone.id}`,
-            type: 'weak_signal',
-            droneId: drone.id,
-            droneName: drone.name,
-            message: `弱信号警告：${telemetry.signal_strength}%`,
-            time: telemetry.report_time,
-            level: 'warning',
-            coordinates: telemetry.coordinates,
-          })
-        }
+      if (drone.signal_strength < 40) {
+        events.push({
+          id: `signal-${drone.id}`,
+          type: 'weak_signal',
+          droneId: drone.id,
+          droneName: drone.name,
+          message: `弱信号警告：${drone.signal_strength}%`,
+          time: drone.last_report_time || drone.last_heartbeat || drone.created_at,
+          level: 'warning',
+          coordinates:
+            drone.latitude && drone.longitude
+              ? { lat: drone.latitude, lon: drone.longitude }
+              : telemetry?.coordinates,
+        })
       }
 
       const task = getDroneCurrentTask(drone.id)
-      if (task) {
-        events.push({
-          id: `task-${drone.id}`,
-          type: 'task_abnormal',
-          droneId: drone.id,
-          droneName: drone.name,
-          message: `任务异常：${task.name}`,
-          time: task.started_at || task.created_at,
-          level: 'error',
-        })
+      if (task && task.status !== 'running' && task.status !== 'completed') {
+        const taskSummary = getTaskLatestSummary(task.id)
+        if (taskSummary && (taskSummary.task_status === 'error' || taskSummary.task_status === 'aborted')) {
+          events.push({
+            id: `task-${drone.id}`,
+            type: 'task_abnormal',
+            droneId: drone.id,
+            droneName: drone.name,
+            message: `任务异常：${task.name} (${taskSummary.task_status_display || taskSummary.task_status})`,
+            time: taskSummary.report_time || task.started_at || task.created_at,
+            level: 'error',
+          })
+        }
       }
     })
 
     return events.sort((a, b) => dayjs(b.time).valueOf() - dayjs(a.time).valueOf())
-  }, [drones, telemetries, tasks])
+  }, [drones, telemetries, tasks, taskSummaries])
 
   const stats = useMemo(() => {
     const online = drones.filter((d) => getDroneOnlineStatus(d) === 'online').length
-    const inTask = drones.filter((d) => getDroneCurrentTask(d.id)).length
-    const lowBattery = drones.filter((d) => {
-      const t = getDroneTelemetry(d.id)
-      return t && t.battery < 30
-    }).length
-    const weakSignal = drones.filter((d) => {
-      const t = getDroneTelemetry(d.id)
-      return t && t.signal_strength < 40
-    }).length
+    const inTask = drones.filter((d) => !!d.current_task_id || getDroneCurrentTask(d.id)).length
+    const lowBattery = drones.filter((d) => d.battery < 30).length
+    const weakSignal = drones.filter((d) => d.signal_strength < 40).length
     const offline = drones.filter((d) => getDroneOnlineStatus(d) === 'offline').length
     const abnormal = abnormalEvents.length
 
@@ -366,22 +393,19 @@ export default function DroneOverview() {
     }
   }
 
-  const handleCommand = async (command: string) => {
+  const handleCommand = async (command: 'start' | 'pause' | 'resume' | 'return_home') => {
     if (!selectedDroneId) return
     try {
       const task = getDroneCurrentTask(selectedDroneId)
       if (command === 'start' && task) {
         await tasksApi.start(task.id)
-      } else if (command === 'pause' && task) {
-        await api.post(`/tasks/${task.id}/pause/`)
-      } else if (command === 'resume' && task) {
-        await api.post(`/tasks/${task.id}/resume/`)
-      } else if (command === 'return_home' && task) {
-        await api.post(`/tasks/${task.id}/return_home/`)
+      } else if ((command === 'pause' || command === 'resume' || command === 'return_home') && task) {
+        await tasksApi.taskControl(task.id, command)
       }
       loadData()
-    } catch (e) {
-      console.error(e)
+    } catch (e: any) {
+      console.error('Command error:', e)
+      alert(e?.response?.data?.error || e?.response?.data?.message || '指令发送失败')
     }
   }
 
@@ -589,26 +613,22 @@ export default function DroneOverview() {
 
                               {/* Status Indicators */}
                               <div className="flex items-center gap-3 text-xs">
-                                {telemetry && (
-                                  <>
-                                    <span
-                                      className={`flex items-center gap-1 ${getBatteryColor(
-                                        telemetry.battery
-                                      )}`}
-                                    >
-                                      <Battery className="w-3 h-3" />
-                                      {telemetry.battery}%
-                                    </span>
-                                    <span
-                                      className={`flex items-center gap-1 ${getSignalColor(
-                                        telemetry.signal_strength
-                                      )}`}
-                                    >
-                                      <Signal className="w-3 h-3" />
-                                      {telemetry.signal_strength}%
-                                    </span>
-                                  </>
-                                )}
+                                <span
+                                  className={`flex items-center gap-1 ${getBatteryColor(
+                                    drone.battery
+                                  )}`}
+                                >
+                                  <Battery className="w-3 h-3" />
+                                  {drone.battery}%
+                                </span>
+                                <span
+                                  className={`flex items-center gap-1 ${getSignalColor(
+                                    drone.signal_strength
+                                  )}`}
+                                >
+                                  <Signal className="w-3 h-3" />
+                                  {drone.signal_strength}%
+                                </span>
                               </div>
 
                               {/* Current Task */}
@@ -630,10 +650,10 @@ export default function DroneOverview() {
                               )}
 
                               {/* Location */}
-                              {telemetry && telemetry.coordinates && (
+                              {drone.latitude != null && drone.longitude != null && (
                                 <p className="text-xs text-text-muted mt-1 flex items-center gap-1">
                                   <MapPin className="w-3 h-3" />
-                                  {telemetry.coordinates.lat.toFixed(4)}, {telemetry.coordinates.lon.toFixed(4)}
+                                  {drone.latitude.toFixed(4)}, {drone.longitude.toFixed(4)}
                                 </p>
                               )}
                             </div>
@@ -720,11 +740,13 @@ export default function DroneOverview() {
               {drones.map((drone) => {
                 const telemetry = getDroneTelemetry(drone.id)
                 const onlineStatus = getDroneOnlineStatus(drone)
-                if (!telemetry) return null
+                const lat = drone.latitude ?? telemetry?.latitude
+                const lon = drone.longitude ?? telemetry?.longitude
+                if (lat == null || lon == null) return null
                 return (
                   <Marker
                     key={drone.id}
-                    position={[telemetry.latitude, telemetry.longitude]}
+                    position={[lat, lon]}
                     icon={droneIcon(onlineStatus)}
                     eventHandlers={{
                       click: () => handleDroneClick(drone),
@@ -736,10 +758,10 @@ export default function DroneOverview() {
                         <p className="text-xs text-text-muted mb-2">{drone.serial_number}</p>
                         <div className="space-y-1 text-xs">
                           <p>状态: {onlineStatus === 'online' ? '在线' : '离线'}</p>
-                          <p>电量: {telemetry.battery}%</p>
-                          <p>信号: {telemetry.signal_strength}%</p>
-                          <p>速度: {telemetry.speed.toFixed(1)} m/s</p>
-                          <p>高度: {telemetry.altitude.toFixed(1)} m</p>
+                          <p>电量: {drone.battery}%</p>
+                          <p>信号: {drone.signal_strength}%</p>
+                          <p>速度: {(telemetry?.speed ?? drone.speed).toFixed(1)} m/s</p>
+                          <p>高度: {(telemetry?.altitude ?? drone.altitude).toFixed(1)} m</p>
                         </div>
                       </div>
                     </Popup>
@@ -1023,111 +1045,109 @@ export default function DroneOverview() {
                   <Activity className="w-4 h-4 text-cyan" />
                   实时遥测
                 </h5>
-                {selectedDroneTelemetry ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-bg-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Battery className="w-4 h-4" />
-                        <span className="text-xs text-text-muted">电量</span>
-                      </div>
-                      <div className="flex items-end justify-between">
-                        <span
-                          className={`text-xl font-display font-bold ${getBatteryColor(
-                            selectedDroneTelemetry.battery
-                          )}`}
-                        >
-                          {selectedDroneTelemetry.battery}%
-                        </span>
-                      </div>
-                      <div className="mt-2 h-1.5 bg-bg-dark rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${getBatteryBgColor(
-                            selectedDroneTelemetry.battery
-                          )} transition-all duration-500`}
-                          style={{ width: `${selectedDroneTelemetry.battery}%` }}
-                        ></div>
-                      </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-bg-card rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Battery className="w-4 h-4" />
+                      <span className="text-xs text-text-muted">电量</span>
                     </div>
-                    <div className="bg-bg-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Signal className="w-4 h-4" />
-                        <span className="text-xs text-text-muted">信号</span>
-                      </div>
-                      <div className="flex items-end justify-between">
-                        <span
-                          className={`text-xl font-display font-bold ${getSignalColor(
-                            selectedDroneTelemetry.signal_strength
-                          )}`}
-                        >
-                          {selectedDroneTelemetry.signal_strength}%
-                        </span>
-                      </div>
-                      <div className="mt-2 h-1.5 bg-bg-dark rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${getBatteryBgColor(
-                            selectedDroneTelemetry.signal_strength
-                          )} transition-all duration-500`}
-                          style={{ width: `${selectedDroneTelemetry.signal_strength}%` }}
-                        ></div>
-                      </div>
+                    <div className="flex items-end justify-between">
+                      <span
+                        className={`text-xl font-display font-bold ${getBatteryColor(
+                          selectedDrone.battery
+                        )}`}
+                      >
+                        {selectedDrone.battery}%
+                      </span>
                     </div>
-                    <div className="bg-bg-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Gauge className="w-4 h-4 text-cyan" />
-                        <span className="text-xs text-text-muted">速度</span>
-                      </div>
-                      <p className="text-xl font-display font-bold text-cyan">
-                        {selectedDroneTelemetry.speed.toFixed(1)}
-                        <span className="text-xs text-text-muted ml-1">m/s</span>
-                      </p>
+                    <div className="mt-2 h-1.5 bg-bg-dark rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${getBatteryBgColor(
+                          selectedDrone.battery
+                        )} transition-all duration-500`}
+                        style={{ width: `${selectedDrone.battery}%` }}
+                      ></div>
                     </div>
-                    <div className="bg-bg-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Mountain className="w-4 h-4 text-amber" />
-                        <span className="text-xs text-text-muted">高度</span>
-                      </div>
-                      <p className="text-xl font-display font-bold text-amber">
-                        {selectedDroneTelemetry.altitude.toFixed(1)}
-                        <span className="text-xs text-text-muted ml-1">m</span>
-                      </p>
+                  </div>
+                  <div className="bg-bg-card rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Signal className="w-4 h-4" />
+                      <span className="text-xs text-text-muted">信号</span>
                     </div>
-                    <div className="bg-bg-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Navigation className="w-4 h-4 text-purple-400" />
-                        <span className="text-xs text-text-muted">航向</span>
-                      </div>
-                      <p className="text-xl font-display font-bold text-purple-400">
-                        {selectedDroneTelemetry.heading.toFixed(0)}
-                        <span className="text-xs text-text-muted ml-1">°</span>
-                      </p>
+                    <div className="flex items-end justify-between">
+                      <span
+                        className={`text-xl font-display font-bold ${getSignalColor(
+                          selectedDrone.signal_strength
+                        )}`}
+                      >
+                        {selectedDrone.signal_strength}%
+                      </span>
                     </div>
-                    <div className="bg-bg-card rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Satellite className="w-4 h-4 text-success" />
-                        <span className="text-xs text-text-muted">卫星</span>
-                      </div>
-                      <p className="text-xl font-display font-bold text-success">
-                        {selectedDroneTelemetry.satellites}
+                    <div className="mt-2 h-1.5 bg-bg-dark rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${getBatteryBgColor(
+                          selectedDrone.signal_strength
+                        )} transition-all duration-500`}
+                        style={{ width: `${selectedDrone.signal_strength}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="bg-bg-card rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Gauge className="w-4 h-4 text-cyan" />
+                      <span className="text-xs text-text-muted">速度</span>
+                    </div>
+                    <p className="text-xl font-display font-bold text-cyan">
+                      {(selectedDroneTelemetry?.speed ?? selectedDrone.speed).toFixed(1)}
+                      <span className="text-xs text-text-muted ml-1">m/s</span>
+                    </p>
+                  </div>
+                  <div className="bg-bg-card rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Mountain className="w-4 h-4 text-amber" />
+                      <span className="text-xs text-text-muted">高度</span>
+                    </div>
+                    <p className="text-xl font-display font-bold text-amber">
+                      {(selectedDroneTelemetry?.altitude ?? selectedDrone.altitude).toFixed(1)}
+                      <span className="text-xs text-text-muted ml-1">m</span>
+                    </p>
+                  </div>
+                  <div className="bg-bg-card rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Navigation className="w-4 h-4 text-purple-400" />
+                      <span className="text-xs text-text-muted">航向</span>
+                    </div>
+                    <p className="text-xl font-display font-bold text-purple-400">
+                      {(selectedDroneTelemetry?.heading ?? selectedDrone.heading).toFixed(0)}
+                      <span className="text-xs text-text-muted ml-1">°</span>
+                    </p>
+                  </div>
+                  <div className="bg-bg-card rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Satellite className="w-4 h-4 text-success" />
+                      <span className="text-xs text-text-muted">卫星</span>
+                    </div>
+                    <p className="text-xl font-display font-bold text-success">
+                      {selectedDroneTelemetry?.satellites ?? '-'}
+                      {selectedDroneTelemetry?.satellites != null && (
                         <span className="text-xs text-text-muted ml-1">颗</span>
-                      </p>
-                    </div>
+                      )}
+                    </p>
+                  </div>
+                  {(selectedDrone.latitude != null && selectedDrone.longitude != null) ||
+                  selectedDroneTelemetry ? (
                     <div className="bg-bg-card rounded-lg p-3 col-span-2">
                       <div className="flex items-center gap-2 mb-1">
                         <MapPin className="w-4 h-4 text-text-muted" />
                         <span className="text-xs text-text-muted">当前位置</span>
                       </div>
                       <p className="text-sm font-mono">
-                        {selectedDroneTelemetry.coordinates.lat.toFixed(6)},{' '}
-                        {selectedDroneTelemetry.coordinates.lon.toFixed(6)}
+                        {(selectedDrone.latitude ?? selectedDroneTelemetry?.coordinates.lat)?.toFixed(6)},{' '}
+                        {(selectedDrone.longitude ?? selectedDroneTelemetry?.coordinates.lon)?.toFixed(6)}
                       </p>
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-6 text-text-muted">
-                    <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">暂无遥测数据</p>
-                  </div>
-                )}
+                  ) : null}
+                </div>
               </div>
 
               {/* Task Info */}
@@ -1156,17 +1176,22 @@ export default function DroneOverview() {
 
                     {/* Waypoint Progress */}
                     {(() => {
+                      const taskSummary = selectedDroneTask
+                        ? getTaskLatestSummary(selectedDroneTask.id)
+                        : null
                       const taskDetail = selectedDroneTask as any
-                      const waypoints = taskDetail.route_data?.waypoints_data
-                      if (waypoints && waypoints.length > 0) {
-                        const currentWaypoint = Math.floor(Math.random() * waypoints.length)
-                        const progress = Math.round((currentWaypoint / waypoints.length) * 100)
+                      const routeWaypoints = taskDetail.route_data?.waypoints_data
+
+                      if (taskSummary && taskSummary.total_waypoints > 0) {
+                        const currentWaypoint = taskSummary.current_waypoint_index + 1
+                        const totalWaypoints = taskSummary.total_waypoints
+                        const progress = Math.round(taskSummary.progress)
                         return (
                           <div className="bg-bg-card rounded-lg p-3">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs text-text-muted">航点进度</span>
                               <span className="text-xs font-medium">
-                                {currentWaypoint} / {waypoints.length}
+                                {currentWaypoint} / {totalWaypoints}
                               </span>
                             </div>
                             <div className="h-2 bg-bg-dark rounded-full overflow-hidden mb-2">
@@ -1177,6 +1202,26 @@ export default function DroneOverview() {
                             </div>
                             <div className="flex items-center justify-between text-xs text-text-muted">
                               <span>进度 {progress}%</span>
+                            </div>
+                          </div>
+                        )
+                      } else if (routeWaypoints && routeWaypoints.length > 0) {
+                        return (
+                          <div className="bg-bg-card rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs text-text-muted">航点进度</span>
+                              <span className="text-xs font-medium">
+                                0 / {routeWaypoints.length}
+                              </span>
+                            </div>
+                            <div className="h-2 bg-bg-dark rounded-full overflow-hidden mb-2">
+                              <div
+                                className="h-full bg-cyan transition-all duration-500"
+                                style={{ width: '0%' }}
+                              ></div>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-text-muted">
+                              <span>进度 0%</span>
                             </div>
                           </div>
                         )
@@ -1201,7 +1246,7 @@ export default function DroneOverview() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleCommand('start')}
-                    disabled={!selectedDroneTask || selectedDroneTask.status === 'running'}
+                    disabled={!selectedDroneTask || (selectedDroneTask.status !== 'pending' && selectedDroneTask.status !== 'paused')}
                     className="flex items-center justify-center gap-2 px-3 py-2 bg-success text-bg-dark font-medium rounded-lg hover:bg-success/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Play className="w-4 h-4" />
@@ -1225,7 +1270,7 @@ export default function DroneOverview() {
                   </button>
                   <button
                     onClick={() => handleCommand('return_home')}
-                    disabled={!selectedDroneTask}
+                    disabled={!selectedDroneTask || (selectedDroneTask.status !== 'running' && selectedDroneTask.status !== 'paused')}
                     className="flex items-center justify-center gap-2 px-3 py-2 bg-danger text-white font-medium rounded-lg hover:bg-danger/90 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Home className="w-4 h-4" />
@@ -1241,8 +1286,8 @@ export default function DroneOverview() {
                   最后心跳
                 </h5>
                 <p className="text-sm">
-                  {selectedDroneTelemetry
-                    ? dayjs(selectedDroneTelemetry.report_time).format('YYYY-MM-DD HH:mm:ss')
+                  {selectedDrone.last_heartbeat
+                    ? dayjs(selectedDrone.last_heartbeat).format('YYYY-MM-DD HH:mm:ss')
                     : '-'}
                 </p>
               </div>

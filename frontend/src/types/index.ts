@@ -74,9 +74,24 @@ export interface Drone {
   name: string
   model: string
   serial_number: string
+  firmware_version: string
   status: 'idle' | 'busy' | 'maintenance' | 'offline'
   status_display: string
+  is_online: boolean
   battery: number
+  signal_strength: number
+  latitude: number | null
+  longitude: number | null
+  altitude: number
+  speed: number
+  heading: number
+  last_heartbeat: string | null
+  last_report_time: string | null
+  last_report_type: string | null
+  last_report_type_display: string | null
+  current_task_id: number | null
+  current_route_id: number | null
+  current_line_id: number | null
   max_flight_time: number
   payload: string
   created_at: string
@@ -419,6 +434,34 @@ export interface DroneTelemetry {
   wind_speed: number | null
   coordinates: { lon: number; lat: number }
   extra_data: any
+}
+
+export interface DroneTaskSummary {
+  id: number
+  drone: number
+  task: number
+  route: number | null
+  report_time: string
+  task_status: string
+  task_status_display: string
+  flight_phase: string
+  current_waypoint_index: number
+  total_waypoints: number
+  progress: number
+  flight_distance: number
+  remaining_distance: number
+  elapsed_time: number
+  remaining_time: number
+  photos_taken: number
+  videos_recorded: number
+  battery_used: number
+  latitude: number | null
+  longitude: number | null
+  altitude: number
+  speed: number
+  heading: number
+  extra_data: any
+  created_at: string
 }
 
 export interface InspectionTaskDetail extends InspectionTask {
