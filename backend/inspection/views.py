@@ -10,6 +10,9 @@ from django.db.models import Q, Count
 from django.utils import timezone
 from datetime import datetime
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import Drone, FlightRoute, FlightRouteVersion, InspectionTask, InspectionMedia, Defect, Alert
 from .serializers import (
@@ -259,27 +262,103 @@ class InspectionTaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
+        from django.db import transaction
         task = self.get_object()
         user = request.user
         if user.role == 'pilot' and not user.is_superadmin and task.pilot_id != user.id:
             return Response({'error': '无权操作此任务'}, status=status.HTTP_403_FORBIDDEN)
-        if task.status not in ['pending', 'paused']:
-            return Response({'error': 'Task cannot be started'}, status=status.HTTP_400_BAD_REQUEST)
-        if not task.drone:
-            return Response({'error': '任务未绑定无人机，请先绑定无人机'}, status=status.HTTP_400_BAD_REQUEST)
-        task.status = 'running'
-        task.started_at = timezone.now()
-        task.save()
 
-        mqtt_result = {'success': False, 'message': 'MQTT未启用'}
+        if not task.drone:
+            return Response(
+                {'error': '任务未绑定无人机，请先绑定无人机'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if task.status == 'running':
+            return Response({
+                'message': '任务已在运行中',
+                'task_id': task.id,
+                'status': task.status,
+                'mqtt_push': {'success': True, 'message': '幂等返回，任务已运行'},
+            })
+
+        if task.status not in ['pending', 'paused']:
+            return Response(
+                {'error': f'任务状态为 {task.status}，无法启动'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        previous_status = task.status
+
         try:
             from drone_mqtt.task_push import TaskPushService
             mqtt_result = TaskPushService.push_task_bind(task.id)
         except Exception as e:
             mqtt_result = {'success': False, 'message': f'MQTT推送异常: {str(e)}'}
 
+        if not mqtt_result.get('success'):
+            return Response({
+                'error': '任务启动失败，MQTT推送未成功',
+                'mqtt_push': mqtt_result,
+                'task_status': task.status,
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            with transaction.atomic():
+                locked_task = InspectionTask.objects.select_for_update().get(id=task.id)
+                if locked_task.status == 'running':
+                    return Response({
+                        'message': '任务已在运行中',
+                        'task_id': locked_task.id,
+                        'status': locked_task.status,
+                        'mqtt_push': {'success': True, 'message': '幂等返回，任务已运行'},
+                    })
+                if locked_task.status not in ['pending', 'paused']:
+                    TaskPushService.push_task_unbind(task.id)
+                    return Response({
+                        'error': f'任务状态已变更为 {locked_task.status}，无法启动',
+                        'mqtt_push': mqtt_result,
+                    }, status=status.HTTP_409_CONFLICT)
+
+                locked_task.status = 'running'
+                if not locked_task.started_at:
+                    locked_task.started_at = timezone.now()
+                locked_task.save(update_fields=['status', 'started_at'])
+
+                if locked_task.drone:
+                    from inspection.models import Drone
+                    drone = Drone.objects.select_for_update().get(id=locked_task.drone_id)
+                    drone.current_task_id = locked_task.id
+                    drone.current_route_id = locked_task.route_id
+                    drone.current_line_id = (
+                        locked_task.route.line_id
+                        if locked_task.route and locked_task.route.line
+                        else None
+                    )
+                    drone.status = 'busy'
+                    drone.save(update_fields=[
+                        'current_task_id', 'current_route_id',
+                        'current_line_id', 'status'
+                    ])
+
+                task = locked_task
+
+        except Exception as e:
+            try:
+                TaskPushService.push_task_unbind(task.id)
+            except Exception:
+                pass
+            logger.error(f'任务启动DB更新失败，已尝试解绑MQTT: {e}', exc_info=True)
+            return Response({
+                'error': f'任务启动失败，数据库更新异常: {str(e)}',
+                'mqtt_push': mqtt_result,
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         return Response({
             'message': 'Task started',
+            'task_id': task.id,
+            'status': task.status,
+            'previous_status': previous_status,
             'mqtt_push': mqtt_result,
         })
 

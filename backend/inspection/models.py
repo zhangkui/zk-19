@@ -445,6 +445,7 @@ class InspectionMedia(models.Model):
     altitude = models.FloatField(null=True, blank=True, verbose_name='飞行高度(m)')
     has_defect = models.BooleanField(default=False, verbose_name='是否有缺陷')
     defect_count = models.IntegerField(default=0, verbose_name='缺陷数量')
+    extra_data = JSONField(default=dict, blank=True, verbose_name='扩展数据')
     uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name='上传时间')
 
     class Meta:

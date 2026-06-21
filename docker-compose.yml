@@ -76,7 +76,7 @@ services:
       - CELERY_RESULT_BACKEND=rpc://
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - DEBUG=${DEBUG:-True}
-      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-emqx}
+      - MQTT_BROKER_HOST=emqx
       - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
       - MQTT_USERNAME=${MQTT_USERNAME:-}
       - MQTT_PASSWORD=${MQTT_PASSWORD:-}
@@ -104,7 +104,7 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=zk19.settings
       - DATABASE_URL=postgis://${POSTGRES_USER:-zk19}:${POSTGRES_PASSWORD:-zk19_pass}@db:5432/${POSTGRES_DB:-zk19}
-      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-emqx}
+      - MQTT_BROKER_HOST=emqx
       - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-1883}
       - MQTT_USERNAME=${MQTT_USERNAME:-}
       - MQTT_PASSWORD=${MQTT_PASSWORD:-}
