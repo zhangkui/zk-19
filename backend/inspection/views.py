@@ -510,6 +510,16 @@ class SystemLogViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ['log_type', 'log_category', 'log_level', 'drone', 'task']
     search_fields = ['title', 'content', 'drone__name', 'drone__serial_number', 'task__code', 'task__name']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        report_time_after = self.request.query_params.get('report_time_after')
+        report_time_before = self.request.query_params.get('report_time_before')
+        if report_time_after:
+            qs = qs.filter(report_time__gte=report_time_after)
+        if report_time_before:
+            qs = qs.filter(report_time__lte=report_time_before)
+        return qs.order_by('-report_time')
+
 
 class DroneTelemetryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = DroneTelemetry.objects.all()

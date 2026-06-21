@@ -587,22 +587,68 @@ export default function TaskDetail() {
                 </Polyline>
               )}
 
-              {/* Section markers */}
-              {task.sections_data?.map((section) => (
-                <CircleMarker
-                  key={`section-${section.id}`}
-                  center={mapCenter}
-                  radius={1}
-                  opacity={0}
-                >
-                  <Popup>
-                    <div className="text-xs">
-                      <p className="font-medium text-amber">区域: {section.name}</p>
-                      <p className="text-text-muted">里程: {section.start_km} - {section.end_km} km</p>
-                    </div>
-                  </Popup>
-                </CircleMarker>
-              ))}
+              {/* Section lines */}
+              {task.sections_data?.map((section, idx) => {
+                const colors = ['#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6']
+                const color = colors[idx % colors.length]
+                const coords = section.coordinates || []
+                if (coords.length < 2) return null
+                return (
+                  <div key={`section-${section.id}`}>
+                    <Polyline
+                      positions={coords.map((c) => [c[1], c[0]] as [number, number])}
+                      color={color}
+                      weight={8}
+                      opacity={0.35}
+                    >
+                      <Tooltip direction="top">
+                        <div className="text-xs">
+                          <p className="font-medium" style={{ color }}>区段: {section.name}</p>
+                          <p className="text-text-muted">里程: {section.start_km} - {section.end_km} km</p>
+                          <p className="text-text-muted">杆塔: {section.tower_count} 基</p>
+                        </div>
+                      </Tooltip>
+                    </Polyline>
+                    <Polyline
+                      positions={coords.map((c) => [c[1], c[0]] as [number, number])}
+                      color={color}
+                      weight={3}
+                      opacity={0.9}
+                      dashArray="8, 6"
+                    />
+                    {section.start_coordinates && (
+                      <CircleMarker
+                        center={[section.start_coordinates.lat, section.start_coordinates.lon]}
+                        radius={5}
+                        fillColor={color}
+                        color="white"
+                        weight={2}
+                        opacity={1}
+                        fillOpacity={1}
+                      >
+                        <Tooltip direction="top" offset={[0, -6]}>
+                          <span className="text-xs font-medium">{section.name} 起点</span>
+                        </Tooltip>
+                      </CircleMarker>
+                    )}
+                    {section.end_coordinates && (
+                      <CircleMarker
+                        center={[section.end_coordinates.lat, section.end_coordinates.lon]}
+                        radius={5}
+                        fillColor={color}
+                        color="white"
+                        weight={2}
+                        opacity={1}
+                        fillOpacity={1}
+                      >
+                        <Tooltip direction="top" offset={[0, -6]}>
+                          <span className="text-xs font-medium">{section.name} 终点</span>
+                        </Tooltip>
+                      </CircleMarker>
+                    )}
+                  </div>
+                )
+              })}
 
               {/* Tower markers */}
               {task.towers_data?.map((tower) =>

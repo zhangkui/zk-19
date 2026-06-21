@@ -80,6 +80,8 @@ export default function LogManagement() {
   const [expandedLogId, setExpandedLogId] = useState<number | null>(null)
   const [startTime, setStartTime] = useState<string>('')
   const [endTime, setEndTime] = useState<string>('')
+  const [appliedStartTime, setAppliedStartTime] = useState<string>('')
+  const [appliedEndTime, setAppliedEndTime] = useState<string>('')
 
   useEffect(() => {
     loadDrones()
@@ -87,7 +89,7 @@ export default function LogManagement() {
 
   useEffect(() => {
     loadLogs()
-  }, [page, selectedDrone, selectedType, selectedLevel, selectedCategory, startTime, endTime])
+  }, [page, selectedDrone, selectedType, selectedLevel, selectedCategory, appliedStartTime, appliedEndTime, searchKeyword])
 
   const loadDrones = async () => {
     try {
@@ -110,8 +112,14 @@ export default function LogManagement() {
       if (selectedType) params.log_type = selectedType
       if (selectedLevel) params.log_level = selectedLevel
       if (selectedCategory) params.log_category = selectedCategory
-      if (startTime) params.report_time_after = startTime
-      if (endTime) params.report_time_before = endTime
+      if (appliedStartTime) {
+        params.report_time_after = new Date(appliedStartTime).toISOString()
+      }
+      if (appliedEndTime) {
+        const endDate = new Date(appliedEndTime)
+        endDate.setSeconds(59, 999)
+        params.report_time_before = endDate.toISOString()
+      }
 
       const res = await systemLogsApi.list(params)
       setLogs(res.data.results || res.data)
@@ -124,8 +132,9 @@ export default function LogManagement() {
   }
 
   const handleSearch = () => {
+    setAppliedStartTime(startTime)
+    setAppliedEndTime(endTime)
     setPage(1)
-    loadLogs()
   }
 
   const handleReset = () => {
@@ -136,6 +145,8 @@ export default function LogManagement() {
     setSelectedCategory('')
     setStartTime('')
     setEndTime('')
+    setAppliedStartTime('')
+    setAppliedEndTime('')
     setPage(1)
   }
 

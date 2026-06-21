@@ -111,9 +111,67 @@ class TowerSimpleSerializer(serializers.ModelSerializer):
 
 
 class SectionSimpleSerializer(serializers.ModelSerializer):
+    coordinates = serializers.SerializerMethodField()
+    start_coordinates = serializers.SerializerMethodField()
+    end_coordinates = serializers.SerializerMethodField()
+    tower_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Section
-        fields = ['id', 'name', 'start_km', 'end_km']
+        fields = ['id', 'name', 'start_km', 'end_km', 'coordinates',
+                  'start_coordinates', 'end_coordinates', 'tower_count']
+
+    def get_coordinates(self, obj):
+        if not obj.line or not obj.line.geom:
+            return []
+        try:
+            line_3857 = obj.line.geom.transform(3857, clone=True)
+            total_length = line_3857.length
+            start_m = obj.start_km * 1000
+            end_m = obj.end_km * 1000
+            start_norm = max(0.0, min(1.0, start_m / total_length)) if total_length > 0 else 0
+            end_norm = max(0.0, min(1.0, end_m / total_length)) if total_length > 0 else 0
+            segment_coords = []
+            num_points = 20
+            for i in range(num_points + 1):
+                t = start_norm + (end_norm - start_norm) * (i / num_points)
+                point = line_3857.interpolate(t, normalized=True)
+                point_4326 = point.transform(4326, clone=True)
+                segment_coords.append([point_4326.x, point_4326.y])
+            return segment_coords
+        except Exception:
+            return []
+
+    def get_start_coordinates(self, obj):
+        if not obj.line or not obj.line.geom:
+            return None
+        try:
+            line_3857 = obj.line.geom.transform(3857, clone=True)
+            total_length = line_3857.length
+            start_m = obj.start_km * 1000
+            start_norm = max(0.0, min(1.0, start_m / total_length)) if total_length > 0 else 0
+            point = line_3857.interpolate(start_norm, normalized=True)
+            point_4326 = point.transform(4326, clone=True)
+            return {'lon': point_4326.x, 'lat': point_4326.y}
+        except Exception:
+            return None
+
+    def get_end_coordinates(self, obj):
+        if not obj.line or not obj.line.geom:
+            return None
+        try:
+            line_3857 = obj.line.geom.transform(3857, clone=True)
+            total_length = line_3857.length
+            end_m = obj.end_km * 1000
+            end_norm = max(0.0, min(1.0, end_m / total_length)) if total_length > 0 else 0
+            point = line_3857.interpolate(end_norm, normalized=True)
+            point_4326 = point.transform(4326, clone=True)
+            return {'lon': point_4326.x, 'lat': point_4326.y}
+        except Exception:
+            return None
+
+    def get_tower_count(self, obj):
+        return obj.towers.count()
 
 
 class FlightRouteDetailSerializer(serializers.ModelSerializer):

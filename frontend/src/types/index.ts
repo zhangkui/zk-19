@@ -33,6 +33,9 @@ export interface Section {
   description: string
   tower_count: number
   created_at: string
+  coordinates?: [number, number][]
+  start_coordinates?: { lon: number; lat: number } | null
+  end_coordinates?: { lon: number; lat: number } | null
 }
 
 export interface Tower {

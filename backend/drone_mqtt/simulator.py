@@ -112,6 +112,13 @@ class SimulatedDrone:
                 [self._base_lon + 0.001 * i, self._base_lat + 0.0008 * i]
                 for i in range(10)
             ]
+        if self._waypoints:
+            first_wp_lon, first_wp_lat = self._waypoints[0]
+            self._base_lon = first_wp_lon
+            self._base_lat = first_wp_lat
+            self._lon = first_wp_lon
+            self._lat = first_wp_lat
+            logger.info(f'[{self.name}] 使用航线起始点作为起始位置: {first_wp_lat:.6f}, {first_wp_lon:.6f}')
         logger.info(f'[{self.name}] 任务绑定成功: {self._task["task_code"]} 航点数={len(self._waypoints)}')
         self._send_response('task_bind', True, f'绑定{self._task["task_code"]}成功')
 
