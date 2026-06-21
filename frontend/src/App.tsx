@@ -18,6 +18,7 @@ import WorkOrders from './pages/WorkOrders'
 import WorkOrderDetail from './pages/WorkOrderDetail'
 import Analytics from './pages/Analytics'
 import Accounts from './pages/Accounts'
+import DroneOverview from './pages/DroneOverview'
 import { canAccessPath, isAdmin } from './utils'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -94,6 +95,14 @@ function App() {
           element={
             <RoleProtectedRoute path="/drones">
               <Drones />
+            </RoleProtectedRoute>
+          }
+        />
+        <Route
+          path="drone-overview"
+          element={
+            <RoleProtectedRoute path="/drone-overview">
+              <DroneOverview />
             </RoleProtectedRoute>
           }
         />

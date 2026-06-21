@@ -51,6 +51,7 @@ export function isCrew(user: User | null): boolean {
 
 export const MENU_ROLE_ACCESS: Record<string, Role[]> = {
   '/': ['superadmin', 'admin', 'pilot', 'reviewer', 'crew'],
+  '/drone-overview': ['superadmin', 'admin', 'pilot', 'reviewer'],
   '/lines': ['superadmin', 'admin', 'pilot', 'reviewer', 'crew'],
   '/routes': ['superadmin', 'admin'],
   '/drones': ['superadmin', 'admin'],

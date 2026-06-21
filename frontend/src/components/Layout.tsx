@@ -6,12 +6,14 @@ import {
   LayoutDashboard,
   Power,
   FileSearch,
+  Plane,
 } from 'lucide-react'
 import { canAccessPath, ROLE_LABELS } from '../utils'
 import type { Role } from '../utils'
 
 const allMenuItems = [
   { path: '/', label: '总览大屏', icon: LayoutDashboard },
+  { path: '/drone-overview', label: '无人机总览', icon: Plane },
   { path: '/lines', label: '线路地图', icon: Map },
   { path: '/routes', label: '航线管理', icon: Route },
   { path: '/drones', label: '无人机维护', icon: Cpu },
